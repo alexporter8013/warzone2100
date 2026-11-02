@@ -38,6 +38,7 @@
 #include "lib/framework/physfs_ext.h"
 #include "lib/ivis_opengl/bitimage.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
+#include "lib/ivis_opengl/pielighting.h"
 #include "lib/ivis_opengl/screen.h"
 #include "lib/gamelib/gtime.h"
 #include "lib/sound/audio.h"
@@ -521,6 +522,8 @@ bool missionShutDown()
 		fpathActiveBackend().waitForIdle();
 		gameWorld = std::move(mission.gameWorld);
 		mission.gameWorld = {};
+		// the lightmap is sized for the map that just left
+		getCurrentLightmapData().reset(gameWorld.map.width, gameWorld.map.height);
 	}
 	keybindShutdown();
 	// sorry if this breaks something - but it looks like it's what should happen - John
@@ -1075,6 +1078,8 @@ void restoreMissionData()
 	fpathActiveBackend().waitForIdle();
 	gameWorld = std::move(mission.gameWorld);
 	mission.gameWorld = {};
+	// the lightmap is sized for the map that just left
+	getCurrentLightmapData().reset(gameWorld.map.width, gameWorld.map.height);
 	gridMarkDirty();  // The grid holds the objects of the world that just left
 	for (inc = 0; inc < MAX_PLAYERS; inc++)
 	{

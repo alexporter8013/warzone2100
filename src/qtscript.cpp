@@ -2233,7 +2233,12 @@ bool triggerEventBeaconRemoved(int from, int to)
 //__
 bool triggerEventSelected()
 {
-	ASSERT(scriptsReady, "Scripts not initialized yet");
+	if (!scriptsReady)
+	{
+		// the player can still select between a level's scripts being torn down and the next level's start
+		// (a co-op client waits on the result screen for the host), and nothing is left to tell
+		return true;
+	}
 	selectionChanged = true;
 	return true;
 }

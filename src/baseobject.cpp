@@ -49,11 +49,8 @@ Rotation interpolateRot(Rotation v1, Rotation v2, uint32_t t1, uint32_t t2, uint
 {
 	if (t1 == t2)
 	{
-		// spacetime overlap
-#ifdef DEBUG
-		ASSERT(t1 != t2, "Spacetime overlap!");
-#endif
-		// just return v2 (the current rotation)
+		// spacetime overlap: expected for a weapon turret in a world just restored from a saved game, where no
+		// earlier sample exists, so return v2 (the current rotation) without complaint
 		return v2;
 	}
 	//return v1 + (v2 - v1) * (t - t1) / (t2 - t1);
