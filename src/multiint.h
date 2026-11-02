@@ -36,6 +36,9 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <unordered_map>
+#include <nlohmann/json_fwd.hpp>
+#include "difficulty.h"
 #include "lib/framework/wzstring.h"
 #include "lib/framework/loading_task_fwd.h"
 #include "titleui/multiplayer.h"
@@ -151,6 +154,49 @@ void handlePossiblePlayersShouldCheckReadyChange(bool previousPlayersShouldCheck
 
 bool multiplayPlayersReady();
 bool multiplayIsStartingGame();
+
+/**
+ * Prepares `game` for hosting a co-op campaign lobby (selects the first available campaign).
+ * Returns false if no campaigns are available.
+ */
+bool multiLobbyInitCoopCampaign();
+/** True when the lobby is for a (co-op) campaign rather than a skirmish map. */
+bool multiLobbyIsCoopCampaign();
+/**
+ * A joining client takes the host's campaign difficulty and tweak options (the simulation depends on them).
+ * multiLobbyRestoreLocalCampaignSetup() puts the client's own settings back when it leaves.
+ */
+void multiLobbyApplyHostCampaignSetup(DIFFICULTY_LEVEL difficulty, std::unordered_map<std::string, nlohmann::json> tweakOptions);
+void multiLobbyRestoreLocalCampaignSetup();
+/**
+ * Loads a co-op campaign save as the host: the next co-op lobby that starts hosts straight away (nobody can join a
+ * loaded game yet) and then loads the save at `savePath`, instead of waiting for players.
+ */
+void multiLobbyBeginCoopLoad(const std::string& savePath);
+
+/**
+ * A co-op lobby can start from a save instead of a new game. The host picks the save (the load menu's name for it);
+ * the other players download its gamestate.wz from the host, by hash, while in the lobby.
+ */
+bool multiLobbySelectCoopSave(const std::string& savePath);	///< host: false (with a message) if it is not a usable co-op save
+void multiLobbyHostServeCoopSave(const std::string& folder, const std::string& blobPath, const Sha256& hash);	///< host: hand this save out to whoever asks (a running co-op game loading it)
+bool multiLobbyCoopSaveDeclined();		///< client: the player turned the host's saved game down
+void multiLobbyClearCoopSave();								///< back to a new game
+bool multiLobbyHasCoopSave();
+std::string multiLobbyCoopSaveName();
+Sha256 multiLobbyCoopSaveHash();							///< zero if none
+bool multiLobbyCoopSaveFileForHash(const Sha256& hash, std::string& outPath);	///< host: where to read the save the lobby has, for a client's file request
+void multiLobbySetAnnouncedCoopSave(const Sha256& hash, const std::string& name);	///< client: what the host's options say (a zero hash means none)
+std::string multiLobbyCoopSaveDownloadFolder(const Sha256& hash);	///< client: where the save with this hash is (to be) downloaded to
+/**
+ * client: a downloaded save is a file the host chose, so the player is asked whether to trust the host before it is requested
+ * (once per save; a save that is already here from an earlier download needs no asking). If they agree, this requests it.
+ */
+void multiLobbyOfferCoopSaveDownload();
+bool multiLobbyCoopSaveIsHere();	///< host: always; client: the save has been downloaded (and was verified against its hash by the download)
+bool requestCoopSaveDownload();		///< client: ask the host for the save (multiopt.cpp). Only after the player agreed.
+/** Display name of the campaign currently selected in a co-op lobby. */
+std::string multiLobbyCoopCampaignName();
 
 bool sendReadyRequest(UBYTE player, bool bReady);
 

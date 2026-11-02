@@ -283,8 +283,8 @@ nlohmann::ordered_json writeSetupHeader(SaveType saveType)
 	jlevel["challengeActive"] = challengeActive;
 	jlevel["challengeFileName"] = challengeFileName.toUtf8();
 	// The campaign difficulty: the damage modifiers and the campaign scripts' difficulty follow it.
-	// A skirmish or MP game's AIs have their own difficulty.
-	if (!bMultiPlayer)
+	// A skirmish or MP game's AIs have their own difficulty. (A co-op campaign is a campaign: the host's choice is saved.)
+	if (isCampaignGame())
 	{
 		jlevel["campaignDifficulty"] = static_cast<uint8_t>(getDifficultyLevel());
 	}
@@ -944,6 +944,32 @@ static void readLocalState(const nlohmann::ordered_json &j)
 
 constexpr uint32_t PENDING_RESUME_SECTION_VERSION = 1;
 
+// Set while a co-op lobby (the host, or a client that downloaded the host's copy) loads a co-op save
+static bool g_coldLoadCoopLobbyLoad = false;
+// ... and the old game-queue backlog must not be restored: see restoreCoopLobbySlots
+static bool g_coldLoadDropBacklog = false;
+
+// A co-op save records every controller's slot, but those are session state, not campaign state: the helpers are
+// interchangeable, and whoever is in the lobby has a slot. So a load into a co-op lobby keeps the lobby's slots and
+// this machine's own identity exactly as they were before the header was read (the header restores the saved ones),
+// and only the shared player's state comes from the save. (The host's slot number is the shared player's, so the
+// shared player needs no mapping.)
+static void restoreCoopLobbySlots(const std::vector<PLAYER> &lobbySlots, uint32_t localSlot, uint32_t hostSlot)
+{
+	NetPlay.players = lobbySlots;
+	for (PLAYER &pl : NetPlay.players)
+	{
+		pl.ready = false;
+	}
+	selectedPlayer = COOP_CAMPAIGN_PLAYER;
+	realSelectedPlayer = localSlot;
+	NetPlay.hostPlayer = hostSlot;
+	// With other controllers in the game, every machine drops the backlog: it holds the saved session's in-flight
+	// messages, which the machines that did not save it would not all have (a capture point means nothing the next
+	// tick needs is in it, so the game goes on without them)
+	g_coldLoadDropBacklog = NET_numHumanPlayers() > 1;
+}
+
 static nlohmann::ordered_json writePendingResume()
 {
 	nlohmann::ordered_json j = nlohmann::ordered_json::object();
@@ -993,7 +1019,8 @@ static void applyPendingResume(const nlohmann::ordered_json &j)
 			"without in-flight commands)", savedMajor, savedMinor, NETGetMajorVersion(), NETGetMinorVersion());
 		return;
 	}
-	if (gq.contains("queuedOrders") && gq.at("queuedOrders").is_array())
+	// (In a co-op lobby only the hosting machine sends them: the others have the same save, and would send them again)
+	if (gq.contains("queuedOrders") && gq.at("queuedOrders").is_array() && (!g_coldLoadCoopLobbyLoad || NetPlay.isHost))
 	{
 		std::vector<std::vector<uint8_t>> raws;
 		for (const nlohmann::ordered_json &one : gq.at("queuedOrders"))
@@ -1019,6 +1046,10 @@ static void applyPendingResume(const nlohmann::ordered_json &j)
 		if (!msgs.is_array())
 		{
 			continue;
+		}
+		if (g_coldLoadDropBacklog)
+		{
+			continue; // see restoreCoopLobbySlots
 		}
 		std::vector<std::vector<uint8_t>> raws;
 		for (const nlohmann::ordered_json &one : msgs)
@@ -1081,7 +1112,8 @@ std::vector<uint8_t> serializeSavegameContainer(SaveType saveType)
 	return std::move(*zipBytes);
 }
 
-SetupHeaderInfo parseSavegameContainer(const uint8_t *data, size_t len, nlohmann::ordered_json &outGameStateDoc, nlohmann::ordered_json *outLocalStateDoc, nlohmann::ordered_json *outPendingResumeDoc)
+// Open the container archive and parse its JSON document, checking the format. Applies nothing.
+static nlohmann::ordered_json parseContainerDocument(const uint8_t *data, size_t len)
 {
 	if (data == nullptr || len == 0)
 	{
@@ -1133,6 +1165,13 @@ SetupHeaderInfo parseSavegameContainer(const uint8_t *data, size_t len, nlohmann
 	{
 		throw StateError("savegame container missing setup/gameState sections");
 	}
+
+	return doc;
+}
+
+SetupHeaderInfo parseSavegameContainer(const uint8_t *data, size_t len, nlohmann::ordered_json &outGameStateDoc, nlohmann::ordered_json *outLocalStateDoc, nlohmann::ordered_json *outPendingResumeDoc)
+{
+	nlohmann::ordered_json doc = parseContainerDocument(data, len);
 
 	// Restore the setup/identity globals; hand back the GameState document to apply after level load.
 	SetupHeaderInfo info = readSetupHeader(doc.at("setup"));
@@ -1608,6 +1647,35 @@ static bool applyColdLoadScriptPositions()
 	return true;
 }
 
+bool peekCoopSaveForLobby(const std::string &folderPath, LobbySaveInfo &out)
+{
+	try
+	{
+		const std::string blobPath = saveFolderPathFromName(folderPath) + "/" + kStateBlobFileName;
+		std::vector<char> blobBuf;
+		if (!loadFileToBufferVector(blobPath.c_str(), blobBuf, false, false))
+		{
+			return false;
+		}
+		const nlohmann::ordered_json doc = parseContainerDocument(reinterpret_cast<const uint8_t *>(blobBuf.data()), blobBuf.size());
+		const nlohmann::ordered_json &setup = doc.at("setup");
+		const nlohmann::ordered_json &level = setup.at("level");
+		out.blobPath = blobPath;
+		out.blobHash = sha256Sum(blobBuf.data(), blobBuf.size());
+		out.levelName = level.at("levelName").get<std::string>();
+		out.campaignName = level.value("campaignName", std::string());
+		out.difficulty = level.value("campaignDifficulty", static_cast<uint8_t>(DL_NORMAL));
+		out.isCoopCampaign = setup.value("multiplayer", false) && setup.value("bComms", false)
+			&& static_cast<LEVEL_TYPE>(level.at("gameType").get<uint8_t>()) == LEVEL_TYPE::CAMPAIGN;
+		return out.difficulty <= static_cast<uint8_t>(DL_INSANE);
+	}
+	catch (const std::exception &e)
+	{
+		debug(LOG_INFO, "Unable to read savegame '%s' for the lobby: %s", folderPath.c_str(), e.what());
+		return false;
+	}
+}
+
 bool isNewFormatSaveFolder(const std::string &folderPath)
 {
 	const std::string blobPath = saveFolderPathFromName(folderPath) + "/" + kStateBlobFileName;
@@ -1741,6 +1809,7 @@ bool coldLoadRestoreWorld()
 	// (game.cpp): factory-number flags and proximity-message displays. (Per-world object lists +
 	// extractor/sensor/oil indices + structure curCount are reset inside gameStateFromJson's
 	// clearWorldObjects; projectiles are reset by its projectiles section.)
+	debug(LOG_INFO, "Restoring the saved world (gameTime before: %u)", gameTime);
 	initFactoryNumFlag();
 	releaseAllProxDisp();
 
@@ -1811,6 +1880,15 @@ bool coldLoadRestoreWorld()
 		applyPendingResume(*g_coldLoadPendingResumeDoc);
 		g_coldLoadPendingResumeDoc.reset();
 	}
+	if (g_coldLoadCoopLobbyLoad)
+	{
+		// The restored game clock state has the saved session's per-slot queue times, and a slot that was empty or a
+		// different controller then is behind the game time now: every machine would wait for a GAME_GAME_TIME that
+		// can only be sent after a tick, so none would ever tick. A new game starts every slot at the game time.
+		setPlayerGameTime(NET_ALL_PLAYERS, gameTime);
+	}
+	g_coldLoadCoopLobbyLoad = false;
+	g_coldLoadDropBacklog = false;
 
 	// Rebuild the mission HUD against the restored state, where the legacy load rebuilds it (the tail of loadGame,
 	// before the level's remaining data files and stageThreeInitialise).
@@ -1827,6 +1905,7 @@ bool coldLoadRestoreWorld()
 	// Mark this game start as a cold-load reconstruct. stageThreeInitialise consumes it (bInTutorial guard);
 	// the scripting section is restored separately by applyDeferredScripting() in levFinalizeLevelLoad.
 	g_coldLoadReconstruct = true;
+	debug(LOG_INFO, "The saved world is restored (gameTime: %u, controller slot %u, shared player %u)", gameTime, realSelectedPlayer, selectedPlayer);
 	return true;
 }
 
@@ -1837,7 +1916,8 @@ bool coldLoadRestoreWorld()
 /// identity if none is on disk) and set it for the local slot.
 static void restoreLocalPlayerMultiStats()
 {
-	if (!bMultiPlayer || selectedPlayer >= MAX_PLAYERS)
+	// (the stats belong to our own slot, which is not the shared player's in a co-op campaign)
+	if (!bMultiPlayer || localControllerSlot() >= MAX_PLAYERS)
 	{
 		return;
 	}
@@ -1849,6 +1929,14 @@ static void restoreLocalPlayerMultiStats()
 
 LoadingTask<> coldLoadGameInit(ResourceLoadingController &controller, const std::string &folderPath)
 {
+	// A co-op lobby (the host's or a client's) loading the save keeps its slots and this machine's network identity,
+	// as they are now (see restoreCoopLobbySlots): the header read below replaces them with the saved session's.
+	// Taken before the teardown, which resets the controller slot of a game that was running.
+	const bool coopLobbyLoad = isCoopGame();
+	const std::vector<PLAYER> lobbySlots = coopLobbyLoad ? NetPlay.players : std::vector<PLAYER>();
+	const uint32_t localSlot = realSelectedPlayer;
+	const uint32_t hostSlot = NetPlay.hostPlayer;
+
 	// Tear down any currently-loaded game first. For an in-game load, stopGameLoop() deliberately skips
 	// levReleaseAll() when gameLoopStatus == GAMECODE_LOADGAME (the legacy gameLoad does it itself, after
 	// its setup restore), so without this the previous match's data is still live: stageOne/TwoShutDown
@@ -1865,6 +1953,9 @@ LoadingTask<> coldLoadGameInit(ResourceLoadingController &controller, const std:
 	// so restore-time calls that check bMultiMessages change the world directly instead of sending a message
 	// (ex. buildDroid, secondarySetState). stageThreeInitialise turns them on before the scripts' load event.
 	bMultiMessages = false;
+
+	g_coldLoadCoopLobbyLoad = false;
+	g_coldLoadDropBacklog = false;
 
 	// Read the GameState blob (gamestate.wz) from the folder: restores the setup/identity globals
 	// (incl. aLevelName + game.hash) and hands back the embedded GameState document to apply after
@@ -1887,6 +1978,26 @@ LoadingTask<> coldLoadGameInit(ResourceLoadingController &controller, const std:
 	{
 		debug(LOG_ERROR, "Failed to read savegame blob in '%s'", folderPath.c_str());
 		co_return load_fail();
+	}
+
+	if (coopLobbyLoad)
+	{
+		if (!isCoopGame())
+		{
+			debug(LOG_ERROR, "Savegame '%s' is not a co-op campaign save", folderPath.c_str());
+			co_return load_fail();
+		}
+		restoreCoopLobbySlots(lobbySlots, localSlot, hostSlot);
+		g_coldLoadCoopLobbyLoad = true;
+		debug(LOG_INFO, "Co-op lobby load: controller slot %u, host slot %u, humans in the lobby: %u, dropping the saved queue backlog: %d",
+			localSlot, hostSlot, static_cast<unsigned>(NET_numHumanPlayers()), (int)g_coldLoadDropBacklog);
+		for (unsigned i = 0; i < MAX_CONNECTED_PLAYERS && i < NetPlay.players.size(); ++i)
+		{
+			if (NetPlay.players[i].allocated)
+			{
+				debug(LOG_INFO, "  slot %u: \"%s\", joining in progress: %d", i, NetPlay.players[i].name, (int)ingame.JoiningInProgress[i]);
+			}
+		}
 	}
 
 	// Remount the save's mods (warn-and-continue), rescan the level list, resolve the dataset.

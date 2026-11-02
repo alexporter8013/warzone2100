@@ -39,6 +39,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "src/titleui/multiplayer.h"
+#include "src/titleui/campaign.h"
 #include "src/multistat.h"
 #include "src/multiint.h"
 #include "src/multiplay.h"
@@ -615,8 +616,27 @@ void WzLobbyPasswordOptionPopover::display(int xOffset, int yOffset)
 
 WzString formatMapName(const WzString& name)
 {
+	if (multiLobbyIsCoopCampaign())
+	{
+		if (multiLobbyHasCoopSave())
+		{
+			return WzString::fromUtf8(multiLobbyCoopCampaignName()) + " (" + _("Co-op, saved game") + ")";
+		}
+		return WzString::fromUtf8(multiLobbyCoopCampaignName()) + " (" + _("Co-op") + ")";
+	}
+
 	WzString withoutTechlevel = WzString::fromUtf8(mapNameWithoutTechlevel(name.toUtf8().c_str()));
 	return withoutTechlevel + " (" + WzString::number(game.maxPlayers) + "P)";
+}
+
+static WzString formatCoopDifficulty()
+{
+	return WzString(_("Difficulty")) + ": " + difficultyLevelToString(getDifficultyLevel());
+}
+
+static WzString formatCoopSavedGame()
+{
+	return WzString(_("Saved game")) + ": " + (multiLobbyHasCoopSave() ? WzString::fromUtf8(multiLobbyCoopSaveName()) : WzString(_("none (new game)")));
 }
 
 // MARK: - WzMultiLobbyOptionsImpl
@@ -704,6 +724,7 @@ private:
 
 	void addLimitIcons(std::shared_ptr<MultibuttonWidget>& mbw);
 	void setGameOptionStates();
+	void updateSkirmishOnlyItemVisibility();
 
 	void setShowTotalOptionVotesImpl(bool show);
 
@@ -731,6 +752,10 @@ private:
 
 	std::shared_ptr<MultibuttonWidget> limitIconsWidget;
 	std::shared_ptr<WIDGET> limitIconsWidgetWrapper;
+	std::vector<std::shared_ptr<WIDGET>> skirmishOnlyItems;
+	std::vector<std::shared_ptr<WIDGET>> coopOnlyItems;
+	std::shared_ptr<W_LABEL> difficultyNameWidget;
+	std::shared_ptr<W_LABEL> savedGameNameWidget;
 	std::shared_ptr<WzFrontendImageButton> roomPasswordOptionsButton;
 	std::vector<std::function<void ()>> lobbyOptionButtonUpdateFuncs;
 
@@ -859,6 +884,12 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 		return wrappedWidget;
 	};
 
+	// Items that only make sense for skirmish games (a co-op campaign hides them, see updateSkirmishOnlyItemVisibility)
+	auto addSkirmishOnlyItem = [&](const std::shared_ptr<WIDGET>& wrappedWidget) {
+		skirmishOnlyItems.push_back(wrappedWidget);
+		optionsList->addItem(wrappedWidget);
+	};
+
 	auto addSectionImageButton = [&](const std::shared_ptr<LobbyMultiOptionsSectionWidget>& widg, UWORD frontendImgId, int value) -> std::shared_ptr<WzFrontendImageButton> {
 		auto but = WzFrontendImageButton::make(frontendImgId);
 		but->setBorderDrawMode(WzFrontendImageButton::BorderDrawMode::Highlighted);
@@ -950,7 +981,7 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 			});
 		});
 		auto mapChangeButton = addSectionImageButton(mapWidget, IMAGE_GLOBE, 2);
-		mapChangeButton->setTip(_("Select Map\nCan be blocked by players' votes"));
+		mapChangeButton->setTip(multiLobbyIsCoopCampaign() ? _("Select Campaign\nCan be blocked by players' votes") : _("Select Map\nCan be blocked by players' votes"));
 		if (titleUI)
 		{
 			mapChangeButton->addOnClickHandler([psWeakTitleUI](W_BUTTON&) {
@@ -965,6 +996,79 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 		}
 		mapWidget->setGeometry(0, 0, mapWidget->idealWidth(), mapWidget->idealHeight());
 		optionsList->addItem(wrapItemForList(mapWidget, displayWrappedMainRoomItem));
+	}
+
+	// Add "Difficulty" row (co-op campaign only: the host decides, the clients play with the host's choice)
+	{
+		auto difficultyWidget = std::make_shared<LobbyMultiOptionsSectionWidget>();
+		difficultyNameWidget = std::make_shared<W_LABEL>();
+		difficultyNameWidget->setString(formatCoopDifficulty());
+		difficultyWidget->setLabel(difficultyNameWidget);
+		auto difficultyChangeButton = addSectionImageButton(difficultyWidget, IMAGE_GEAR, 1);
+		difficultyChangeButton->setTip(_("Change campaign difficulty"));
+		difficultyChangeButton->addOnClickHandler([psWeakMultiLobbyOptions](W_BUTTON&) {
+			widgScheduleTask([psWeakMultiLobbyOptions]{
+				auto strongMultiLobbyOptions = psWeakMultiLobbyOptions.lock();
+				ASSERT_OR_RETURN(, strongMultiLobbyOptions != nullptr, "No parent");
+				if (ingame.side != InGameSide::HOST_OR_SINGLEPLAYER)
+				{
+					return;
+				}
+				setDifficultyLevel(static_cast<DIFFICULTY_LEVEL>((static_cast<int>(getDifficultyLevel()) + 1) % (static_cast<int>(DL_INSANE) + 1)));
+				strongMultiLobbyOptions->difficultyNameWidget->setString(formatCoopDifficulty());
+				resetReadyStatus(false);
+				if (NetPlay.isHost && NetPlay.bComms)
+				{
+					sendOptions();
+				}
+			});
+		});
+		if (ingame.side == InGameSide::MULTIPLAYER_CLIENT)
+		{
+			difficultyChangeButton->setState(WBUT_DISABLE);
+		}
+		difficultyWidget->setGeometry(0, 0, difficultyWidget->idealWidth(), difficultyWidget->idealHeight());
+		auto wrappedDifficultyWidget = wrapItemForList(difficultyWidget, displayWrappedMainRoomItem);
+		coopOnlyItems.push_back(wrappedDifficultyWidget);
+		optionsList->addItem(wrappedDifficultyWidget);
+	}
+
+	// Add "Saved game" row (co-op campaign only: the host can start from a save, which the other players download)
+	{
+		auto savedGameWidget = std::make_shared<LobbyMultiOptionsSectionWidget>();
+		savedGameNameWidget = std::make_shared<W_LABEL>();
+		savedGameNameWidget->setString(formatCoopSavedGame());
+		savedGameWidget->setLabel(savedGameNameWidget);
+		auto loadSaveButton = addSectionImageButton(savedGameWidget, IMAGE_LOADFORCE, 1);
+		loadSaveButton->setTip(_("Load a saved co-op campaign game"));
+		auto newGameButton = addSectionImageButton(savedGameWidget, IMAGE_ARROW_UNDO, 2);
+		newGameButton->setTip(_("Start a new game instead of the saved one"));
+		if (titleUI)
+		{
+			loadSaveButton->addOnClickHandler([psWeakTitleUI](W_BUTTON&) {
+				widgScheduleTask([psWeakTitleUI]{
+					auto multiOptionsTitleUI = psWeakTitleUI.lock();
+					ASSERT_OR_RETURN(, multiOptionsTitleUI != nullptr, "Null title UI?");
+					multiOptionsTitleUI->openSavePicker();
+				});
+			});
+			newGameButton->addOnClickHandler([psWeakTitleUI](W_BUTTON&) {
+				widgScheduleTask([psWeakTitleUI]{
+					auto multiOptionsTitleUI = psWeakTitleUI.lock();
+					ASSERT_OR_RETURN(, multiOptionsTitleUI != nullptr, "Null title UI?");
+					multiOptionsTitleUI->clearSavedGame();
+				});
+			});
+		}
+		if (ingame.side == InGameSide::MULTIPLAYER_CLIENT || !titleUI)
+		{
+			loadSaveButton->setState(WBUT_DISABLE);
+			newGameButton->setState(WBUT_DISABLE);
+		}
+		savedGameWidget->setGeometry(0, 0, savedGameWidget->idealWidth(), savedGameWidget->idealHeight());
+		auto wrappedSavedGameWidget = wrapItemForList(savedGameWidget, displayWrappedMainRoomItem);
+		coopOnlyItems.push_back(wrappedSavedGameWidget);
+		optionsList->addItem(wrappedSavedGameWidget);
 	}
 
 	// SECTION: "Match Options"
@@ -985,7 +1089,7 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 		matchOptionsConfigureButton->setState(WBUT_DISABLE);
 	}
 	matchOptionsSection->setGeometry(0, 0, matchOptionsSection->idealWidth(), matchOptionsSection->idealHeight());
-	optionsList->addItem(wrapItemForList(matchOptionsSection, displayWrappedOptionSectionItem));
+	addSkirmishOnlyItem(wrapItemForList(matchOptionsSection, displayWrappedOptionSectionItem));
 
 	bool matchOptionsEditMode = (ingame.side == InGameSide::HOST_OR_SINGLEPLAYER);
 
@@ -1011,7 +1115,7 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 			}
 		}
 	});
-	optionsList->addItem(wrapItemForList(scavengerChoice));
+	addSkirmishOnlyItem(wrapItemForList(scavengerChoice));
 
 	// Alliances
 	allianceChoice = std::make_shared<LobbyMultiOptionsChoiceWidget>(matchOptionsEditMode);
@@ -1041,7 +1145,7 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 			}
 		}
 	});
-	optionsList->addItem(wrapItemForList(allianceChoice));
+	addSkirmishOnlyItem(wrapItemForList(allianceChoice));
 
 	// Power
 	powerChoice = std::make_shared<LobbyMultiOptionsChoiceWidget>(matchOptionsEditMode);
@@ -1068,7 +1172,7 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 			}
 		}
 	});
-	optionsList->addItem(wrapItemForList(powerChoice));
+	addSkirmishOnlyItem(wrapItemForList(powerChoice));
 
 	// Bases
 	baseTypeChoice = std::make_shared<LobbyMultiOptionsChoiceWidget>(matchOptionsEditMode);
@@ -1096,7 +1200,7 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 			}
 		}
 	});
-	optionsList->addItem(wrapItemForList(baseTypeChoice));
+	addSkirmishOnlyItem(wrapItemForList(baseTypeChoice));
 
 	if (!isChallenge)
 	{
@@ -1124,7 +1228,7 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 				}
 			}
 		});
-		optionsList->addItem(wrapItemForList(technologyChoice));
+		addSkirmishOnlyItem(wrapItemForList(technologyChoice));
 	}
 
 	// Refresh values for match options
@@ -1153,16 +1257,41 @@ void WzMultiLobbyOptionsImpl::initialize(bool _isChallenge, const std::shared_pt
 		});
 	}
 	limitsSection->setGeometry(0, 0, limitsSection->idealWidth(), limitsSection->idealHeight());
-	optionsList->addItem(wrapItemForList(limitsSection, displayWrappedOptionSectionItem));
+	addSkirmishOnlyItem(wrapItemForList(limitsSection, displayWrappedOptionSectionItem));
 
 	limitIconsWidget = std::make_shared<LobbyMultiOptionsSectionWidget>();
 	addLimitIcons(limitIconsWidget);
 	limitIconsWidget->setGeometry(0, 0, limitIconsWidget->idealWidth(), std::max<int32_t>(limitIconsWidget->idealHeight(), MultiOptionsRowHeight));
 	limitIconsWidgetWrapper = wrapItemForList(limitIconsWidget);
-	limitIconsWidgetWrapper->show(limitIconsWidget->numButtons() > 0);
+	limitIconsWidgetWrapper->show(limitIconsWidget->numButtons() > 0 && !multiLobbyIsCoopCampaign());
 	optionsList->addItem(limitIconsWidgetWrapper);
 
+	updateSkirmishOnlyItemVisibility();
+
 	attach(optionsList);
+}
+
+void WzMultiLobbyOptionsImpl::updateSkirmishOnlyItemVisibility()
+{
+	// Co-op campaign: scavengers / alliances / power / bases / tech / limits are decided by the campaign itself.
+	// (Checked on every refresh, since a joining client learns the game type only once the host's options arrive)
+	const bool showSkirmishOptions = !multiLobbyIsCoopCampaign();
+	for (const auto& item : skirmishOnlyItems)
+	{
+		item->show(showSkirmishOptions);
+	}
+	for (const auto& item : coopOnlyItems)
+	{
+		item->show(!showSkirmishOptions);
+	}
+	if (difficultyNameWidget)
+	{
+		difficultyNameWidget->setString(formatCoopDifficulty());
+	}
+	if (savedGameNameWidget)
+	{
+		savedGameNameWidget->setString(formatCoopSavedGame());
+	}
 }
 
 void WzMultiLobbyOptionsImpl::setGameOptionStates()
@@ -1251,7 +1380,8 @@ void WzMultiLobbyOptionsImpl::refreshData()
 	// update limit icons
 	limitIconsWidget->clearButtons();
 	addLimitIcons(limitIconsWidget);
-	limitIconsWidgetWrapper->show(limitIconsWidget->numButtons() > 0);
+	limitIconsWidgetWrapper->show(limitIconsWidget->numButtons() > 0 && !multiLobbyIsCoopCampaign());
+	updateSkirmishOnlyItemVisibility();
 
 	optionsList->setLayoutDirty();
 }

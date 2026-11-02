@@ -109,6 +109,8 @@
 #include "multiplay.h"
 #include "multiint.h"
 #include "multijoin.h"
+#include "seqdisp.h"
+#include "campaigninfo.h"
 #include "buildprovenance/wzdatacheck.h"
 #include "multistat.h"
 #include "multirecv.h"
@@ -132,6 +134,8 @@
 #include "hci/chatoptions.h"
 #include "multivote.h"
 #include "campaigninfo.h"
+#include "difficulty.h"
+#include "gamestate_savegame.h"
 #include "screens/joiningscreen.h"
 #include "titleui/widgets/lobbyplayerrow.h"
 #include "titleui/widgets/lobbyplayerboxtabs.h"
@@ -796,11 +800,27 @@ private:
 	}
 };
 
+static bool coopLobbyBackdropShown = false;
+
 /// Loads the entire map just to show a picture of it
 static void loadMapPreview(bool hideInterface, std::string mapName, const Sha256& mapHash)
 {
 	std::string		aFileName;
 	Vector2i playerpos[MAX_PLAYERS];	// Will hold player positions
+
+	if (game.type == LEVEL_TYPE::CAMPAIGN)
+	{
+		// A picture of the whole campaign map would give away what the players have yet to discover, so a co-op
+		// lobby shows the main menu's backdrop instead (once: this is called for every change of the lobby options)
+		if (!coopLobbyBackdropShown)
+		{
+			coopLobbyBackdropShown = true;
+			screen_disableMapPreview();
+			pie_LoadBackDrop(SCREEN_RANDOMBDROP);
+		}
+		return;
+	}
+	coopLobbyBackdropShown = false;
 
 	// absurd hack, since there is a problem with updating this crap piece of info, we're setting it to
 	// true by default for now, like it used to be
@@ -1184,6 +1204,347 @@ void updateStructureDisabledFlags()
 	}
 
 	ingame.flags = flags;
+}
+
+// ////////////////////////////////////////////////////////////////////////////
+// Co-op campaign lobby
+
+// Human slots offered in a co-op campaign lobby (the campaign's own players are driven by its scripts)
+static constexpr uint8_t COOP_CAMPAIGN_MAX_PLAYERS = 4;
+
+static std::vector<CAMPAIGN_FILE> coopCampaigns;
+static size_t coopCampaignIdx = 0;
+
+static void selectCoopCampaign(size_t idx)
+{
+	ASSERT_OR_RETURN(, idx < coopCampaigns.size(), "Invalid co-op campaign index: %zu", idx);
+	coopCampaignIdx = idx;
+	const CAMPAIGN_FILE& campaign = coopCampaigns[idx];
+	sstrcpy(game.map, campaign.level.toUtf8().c_str());
+	const std::string &startLevel = cli_coop_start_level();
+	if (!startLevel.empty())
+	{
+		// --coop-level: skip ahead, to test what carries over from one chapter to the next
+		if (levFindDataSet(startLevel.c_str()) != nullptr)
+		{
+			sstrcpy(game.map, startLevel.c_str());
+		}
+		else
+		{
+			debug(LOG_ERROR, "--coop-level: unknown level \"%s\", starting the campaign normally", startLevel.c_str());
+		}
+	}
+	game.hash.setZero(); // built-in level
+	game.maxPlayers = COOP_CAMPAIGN_MAX_PLAYERS;
+	game.isMapMod = false;
+	game.isRandom = false;
+	setCampaignName(campaign.name.toStdString());
+}
+
+bool multiLobbyInitCoopCampaign()
+{
+	coopCampaigns = readCampaignFiles();
+	if (coopCampaigns.empty())
+	{
+		debug(LOG_ERROR, "No campaigns available for co-op");
+		return false;
+	}
+	game.type = LEVEL_TYPE::CAMPAIGN;
+	clearCamTweakOptions(); // start from the defaults; the host's lobby settings are sent to the clients
+	multiLobbyClearCoopSave();
+	selectCoopCampaign(0);
+	return true;
+}
+
+// A new campaign starts with its introduction video, as the single player campaign menu does. Everyone queues it
+// from the level the lobby settled on, so it plays for each human and the start overlay waits for the last to finish.
+static void coopQueueCampaignIntroVideo()
+{
+	if (game.type != LEVEL_TYPE::CAMPAIGN)
+	{
+		return;
+	}
+	for (const CAMPAIGN_FILE& campaign : readCampaignFiles())
+	{
+		if (campaign.level.toUtf8() == game.map)
+		{
+			if (!campaign.video.isEmpty())
+			{
+				// the host has its loading screen up already, and that is drawn instead of a video
+				closeLoadingScreen();
+				seq_ClearSeqList();
+				seq_AddSeqToList(campaign.video.toUtf8().c_str(), nullptr, campaign.captions.toUtf8().c_str(), false);
+				const bool started = seq_StartNextFullScreenVideo();
+				debug(LOG_INFO, "Co-op: campaign intro video %s (started: %d)", campaign.video.toUtf8().c_str(), (int)started);
+			}
+			return;
+		}
+	}
+}
+
+struct CoopLobbySave
+{
+	enum class Consent { Unanswered, Accepted, Declined };
+	Consent consent = Consent::Unanswered; // client: whether the player agreed to download this save from the host
+	bool active = false;
+	std::string folder;     // host: the load menu's name for the save
+	std::string blobPath;   // host: the gamestate.wz to serve to clients
+	Sha256 hash;
+	std::string name;
+};
+static CoopLobbySave coopLobbySave;
+
+static std::string saveNameFromPath(const std::string& savePath)
+{
+	std::string name = savePath;
+	const size_t lastSep = name.find_last_of('/');
+	if (lastSep != std::string::npos)
+	{
+		name.erase(0, lastSep + 1);
+	}
+	if (name.size() > 4 && name.compare(name.size() - 4, 4, ".gam") == 0)
+	{
+		name.erase(name.size() - 4);
+	}
+	return name;
+}
+
+bool multiLobbySelectCoopSave(const std::string& savePath)
+{
+	gamestate::savegame::LobbySaveInfo info;
+	if (!gamestate::savegame::peekCoopSaveForLobby(savePath, info) || !info.isCoopCampaign)
+	{
+		displayRoomSystemMessage(_("That is not a co-op campaign save."));
+		return false;
+	}
+	coopLobbySave.active = true;
+	coopLobbySave.folder = savePath;
+	coopLobbySave.blobPath = info.blobPath;
+	coopLobbySave.hash = info.blobHash;
+	coopLobbySave.name = saveNameFromPath(savePath);
+
+	// The lobby shows what the save holds
+	sstrcpy(game.map, info.levelName.c_str());
+	game.hash.setZero();
+	game.maxPlayers = COOP_CAMPAIGN_MAX_PLAYERS;
+	game.isMapMod = false;
+	game.isRandom = false;
+	if (!info.campaignName.empty())
+	{
+		setCampaignName(info.campaignName);
+	}
+	setDifficultyLevel(static_cast<DIFFICULTY_LEVEL>(info.difficulty));
+	return true;
+}
+
+void multiLobbyClearCoopSave()
+{
+	coopLobbySave = CoopLobbySave();
+}
+
+void multiLobbyHostServeCoopSave(const std::string& folder, const std::string& blobPath, const Sha256& hash)
+{
+	coopLobbySave = CoopLobbySave();
+	coopLobbySave.active = true;
+	coopLobbySave.folder = folder;
+	coopLobbySave.blobPath = blobPath;
+	coopLobbySave.hash = hash;
+	coopLobbySave.name = saveNameFromPath(folder);
+}
+
+bool multiLobbyCoopSaveDeclined()
+{
+	return coopLobbySave.active && coopLobbySave.consent == CoopLobbySave::Consent::Declined;
+}
+
+bool multiLobbyHasCoopSave()
+{
+	return coopLobbySave.active;
+}
+
+std::string multiLobbyCoopSaveName()
+{
+	return coopLobbySave.name;
+}
+
+Sha256 multiLobbyCoopSaveHash()
+{
+	Sha256 hash;
+	hash.setZero();
+	return coopLobbySave.active ? coopLobbySave.hash : hash;
+}
+
+bool multiLobbyCoopSaveFileForHash(const Sha256& hash, std::string& outPath)
+{
+	if (!NetPlay.isHost || !coopLobbySave.active || hash.isZero() || hash != coopLobbySave.hash)
+	{
+		return false;
+	}
+	outPath = coopLobbySave.blobPath;
+	return true;
+}
+
+static const char *const COOP_SAVE_OFFER_TAG = "coopSaveOffer";
+
+// The name comes from the host and is shown to the player: keep it to plain printable text
+static std::string sanitizeSaveName(const std::string& name)
+{
+	std::string result;
+	for (unsigned char c : name)
+	{
+		result += (c >= 0x20 && c != 0x7f) ? static_cast<char>(c) : '?';
+	}
+	return result;
+}
+
+void multiLobbySetAnnouncedCoopSave(const Sha256& hash, const std::string& name)
+{
+	if (hash.isZero())
+	{
+		cancelOrDismissNotificationsWithTag(COOP_SAVE_OFFER_TAG);
+		coopLobbySave = CoopLobbySave();
+		return;
+	}
+	if (!coopLobbySave.active || coopLobbySave.hash != hash)
+	{
+		// a different save: it has to be agreed to again
+		cancelOrDismissNotificationsWithTag(COOP_SAVE_OFFER_TAG);
+		coopLobbySave = CoopLobbySave();
+	}
+	coopLobbySave.active = true;
+	coopLobbySave.hash = hash;
+	coopLobbySave.name = sanitizeSaveName(name);
+}
+
+bool multiLobbyCoopSaveIsHere()
+{
+	if (NetPlay.isHost)
+	{
+		return true;
+	}
+	if (!coopLobbySave.active)
+	{
+		return false;
+	}
+	const std::string path = multiLobbyCoopSaveDownloadFolder(coopLobbySave.hash) + "/gamestate.wz";
+	return PHYSFS_exists(path.c_str()) && NETgetDownloadProgress(localControllerSlot()) == 100 && findHashOfFile(path.c_str()) == coopLobbySave.hash;
+}
+
+void multiLobbyOfferCoopSaveDownload()
+{
+	if (NetPlay.isHost || !coopLobbySave.active)
+	{
+		return;
+	}
+
+	if (coopLobbySave.consent == CoopLobbySave::Consent::Accepted)
+	{
+		requestCoopSaveDownload();
+		return;
+	}
+	if (coopLobbySave.consent == CoopLobbySave::Consent::Declined || hasNotificationsWithTag(COOP_SAVE_OFFER_TAG))
+	{
+		return; // already asked (the player can be asked again by trying to ready up)
+	}
+
+	// A copy of this exact save from an earlier download needs no asking: nothing new is downloaded
+	{
+		const std::string path = multiLobbyCoopSaveDownloadFolder(coopLobbySave.hash) + "/gamestate.wz";
+		if (PHYSFS_exists(path.c_str()) && findHashOfFile(path.c_str()) == coopLobbySave.hash)
+		{
+			debug(LOG_INFO, "The host's saved game is already here from an earlier download (%s): not asking again", path.c_str());
+			coopLobbySave.consent = CoopLobbySave::Consent::Accepted;
+			return;
+		}
+	}
+
+	const Sha256 offeredHash = coopLobbySave.hash;
+	WZ_Notification notification;
+	notification.duration = 0; // until answered
+	notification.isModal = true;
+	notification.tag = COOP_SAVE_OFFER_TAG;
+	notification.contentTitle = _("Download saved game?");
+	notification.contentText = astringf(_("The host (%s) wants to send you the saved game \"%s\".\n\n"
+		"A saved game is a file that your game loads. Only accept it from a host you trust."),
+		getPlayerName(NetPlay.hostPlayer), coopLobbySave.name.c_str());
+	notification.action = WZ_Notification_Action(_("Download"), [offeredHash](const WZ_Notification&) {
+		if (multiLobbyCoopSaveHash() != offeredHash)
+		{
+			return; // the host has since picked another save
+		}
+		coopLobbySave.consent = CoopLobbySave::Consent::Accepted;
+		requestCoopSaveDownload();
+	});
+	notification.onDismissed = [offeredHash](const WZ_Notification&, WZ_Notification_Dismissal_Reason reason) {
+		if (reason == WZ_Notification_Dismissal_Reason::USER_DISMISSED
+			&& multiLobbyCoopSaveHash() == offeredHash && coopLobbySave.consent == CoopLobbySave::Consent::Unanswered)
+		{
+			coopLobbySave.consent = CoopLobbySave::Consent::Declined;
+			addConsoleMessage(_("You did not accept the saved game. Press ready to be asked again."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+	};
+	addNotification(notification, WZ_Notification_Trigger::Immediate());
+}
+
+std::string multiLobbyCoopSaveDownloadFolder(const Sha256& hash)
+{
+	return std::string("savegames/coop-lobby/") + hash.toString();
+}
+
+static std::string coopLoadSavePath; // set by multiLobbyBeginCoopLoad, consumed by the next lobby start
+
+void multiLobbyBeginCoopLoad(const std::string& savePath)
+{
+	coopLoadSavePath = savePath;
+}
+
+// A joining client plays with the host's campaign difficulty and tweak options, which the simulation depends on.
+// Its own settings are put back when it leaves, so joining a game doesn't change the player's single-player setup.
+static optional<DIFFICULTY_LEVEL> localCampaignDifficulty;
+static optional<std::unordered_map<std::string, nlohmann::json>> localCampaignTweakOptions;
+
+void multiLobbyApplyHostCampaignSetup(DIFFICULTY_LEVEL difficulty, std::unordered_map<std::string, nlohmann::json> tweakOptions)
+{
+	if (!localCampaignDifficulty.has_value())
+	{
+		localCampaignDifficulty = getDifficultyLevel();
+		localCampaignTweakOptions = getCamTweakOptions();
+	}
+	setCamTweakOptions(std::move(tweakOptions)); // first: the difficulty's damage modifiers depend on the tweak options
+	setDifficultyLevel(difficulty);
+}
+
+void multiLobbyRestoreLocalCampaignSetup()
+{
+	if (!localCampaignDifficulty.has_value())
+	{
+		return;
+	}
+	setCamTweakOptions(localCampaignTweakOptions.value_or(std::unordered_map<std::string, nlohmann::json>()));
+	setDifficultyLevel(localCampaignDifficulty.value());
+	localCampaignDifficulty.reset();
+	localCampaignTweakOptions.reset();
+}
+
+bool multiLobbyIsCoopCampaign()
+{
+	return game.type == LEVEL_TYPE::CAMPAIGN;
+}
+
+std::string multiLobbyCoopCampaignName()
+{
+	if (coopCampaigns.empty())
+	{
+		coopCampaigns = readCampaignFiles(); // clients never went through multiLobbyInitCoopCampaign
+	}
+	for (const auto& campaign : coopCampaigns)
+	{
+		if (campaign.level.toUtf8() == game.map)
+		{
+			return campaign.name.toStdString();
+		}
+	}
+	return std::string(game.map);
 }
 
 WzString formatGameName(WzString name)
@@ -2442,6 +2803,24 @@ void WzMultiplayerOptionsTitleUI::openColourChooser(uint32_t player)
 
 void WzMultiplayerOptionsTitleUI::openMapChooser()
 {
+	if (multiLobbyIsCoopCampaign())
+	{
+		// No map list for co-op: cycle through the available campaigns
+		if (coopCampaigns.empty() || (NetPlay.bComms && NetPlay.isHost && !canChangeMapOrRandomize()))
+		{
+			return;
+		}
+		multiLobbyClearCoopSave(); // picking a campaign means a new game, not the loaded save
+		selectCoopCampaign((coopCampaignIdx + 1) % coopCampaigns.size());
+		addGameOptions();
+		if (NetPlay.isHost && NetPlay.bComms)
+		{
+			sendOptions();
+			NETsetLobbyOptField(game.map, NET_LOBBY_OPT_FIELD::MAPNAME);
+		}
+		return;
+	}
+
 	widgDelete(psWScreen, MULTIOP_PLAYERS);
 	widgDelete(psWScreen, FRONTEND_SIDETEXT2);					// del text too,
 
@@ -2454,6 +2833,43 @@ void WzMultiplayerOptionsTitleUI::openMapChooser()
 
 		NETsetLobbyOptField(game.map, NET_LOBBY_OPT_FIELD::MAPNAME);
 	}
+}
+
+void WzMultiplayerOptionsTitleUI::openSavePicker()
+{
+	// (The host has to be able to do this before pressing "Start Hosting", like picking the map)
+	if (ingame.side != InGameSide::HOST_OR_SINGLEPLAYER || !multiLobbyIsCoopCampaign())
+	{
+		return;
+	}
+	if (NetPlay.isHost && NetPlay.bComms && !canChangeMapOrRandomize())
+	{
+		return;
+	}
+	addLoadSave(LOAD_FRONTEND_COOP, _("Load Co-op Campaign Saved Game")); // run() picks up the result
+}
+
+// The lobby's options changed because of its save (picked or cleared): show and send them
+static void coopSaveChangedUpdate(WzMultiplayerOptionsTitleUI& titleUI)
+{
+	resetReadyStatus(false);
+	titleUI.updateGameOptions();
+	if (NetPlay.isHost && NetPlay.bComms)
+	{
+		sendOptions();
+		NETsetLobbyOptField(game.map, NET_LOBBY_OPT_FIELD::MAPNAME);
+	}
+}
+
+void WzMultiplayerOptionsTitleUI::clearSavedGame()
+{
+	if (ingame.side != InGameSide::HOST_OR_SINGLEPLAYER || !multiLobbyHasCoopSave())
+	{
+		return;
+	}
+	multiLobbyClearCoopSave();
+	selectCoopCampaign(coopCampaignIdx); // the campaign button's choice again
+	coopSaveChangedUpdate(*this);
 }
 
 void WzMultiplayerOptionsTitleUI::closeColourChooser()
@@ -2734,6 +3150,21 @@ bool recvTeamRequest(NETQUEUE queue)
 
 bool sendReadyRequest(UBYTE player, bool bReady)
 {
+	if (bReady && !NetPlay.isHost && multiLobbyHasCoopSave() && !multiLobbyCoopSaveIsHere())
+	{
+		// A co-op lobby that starts from a save: we can't be ready without having it
+		if (coopLobbySave.consent == CoopLobbySave::Consent::Declined)
+		{
+			coopLobbySave.consent = CoopLobbySave::Consent::Unanswered; // ask again
+			multiLobbyOfferCoopSaveDownload();
+		}
+		else
+		{
+			addConsoleMessage(_("The saved game has to be downloaded first."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+		return false;
+	}
+
 	if (NetPlay.isHost)			// do or request the change.
 	{
 		bool changedValue = changeReadyStatus(player, bReady);
@@ -4929,6 +5360,7 @@ static void stopJoining(std::shared_ptr<WzTitleUI> parent, LOBBY_ERROR_TYPES err
 	debug(LOG_NET, "player %u (Host is %s) stopping.", selectedPlayer, NetPlay.isHost ? "true" : "false");
 
 	pie_LoadBackDrop(SCREEN_RANDOMBDROP);
+	coopLobbyBackdropShown = false;
 
 	if (NetPlay.isHost) // cancel a hosted game.
 	{
@@ -5747,6 +6179,7 @@ void WzMultiplayerOptionsTitleUI::processMultiopWidgets(UDWORD id)
 				sendLobbyChangeVoteData(0);
 			}
 			NETGameLocked(false);		// reset status on a cancel
+			multiLobbyRestoreLocalCampaignSetup();
 			stopJoining(parent, ERROR_NOERROR);
 		}
 		else
@@ -5778,10 +6211,50 @@ void WzMultiplayerOptionsTitleUI::setOption_SpectatorHost(bool value)
 	}
 }
 
+/*
+ * Start a co-op lobby from the save the host picked. There is no map to load and no fire-up seed to apply (the save
+ * has the random state): everyone loads their copy of the same save, the clients the one they downloaded from us.
+ */
+static void startMultiplayerGameFromCoopSave()
+{
+	ASSERT_HOST_ONLY(return);
+	debug(LOG_INFO, "startMultiplayerGame (from the saved game %s)", coopLobbySave.folder.c_str());
+
+	cancelOrDismissNotificationsWithTag(LOBBY_DISABLED_TAG);
+	cancelOrDismissNotificationIfTag([](const std::string& tag) {
+		return (tag.rfind(SLOTTYPE_TAG_PREFIX, 0) == 0);
+	});
+
+	bMultiPlayer = true;
+	bMultiMessages = true;
+	NETsetPlayerConnectionStatus(CONNECTIONSTATUS_NORMAL, NET_ALL_PLAYERS);  // reset disconnect conditions
+	initLoadingScreen(true);
+
+	resetDataHash();	// the data (and so the hash) of the save's level is loaded from here
+	sendOptions();		// the last word on the lobby's settings, for everyone who is about to load
+	NEThaltJoining(true);	// stop new players entering.
+	ingame.TimeEveryoneIsInGame = nullopt;
+	ingame.cheatsLocked = getLockedOptions().cheats;
+	ingame.endTime = nullopt;
+	ingame.isAllPlayersDataOK = false;
+	memset(&ingame.DataIntegrity, 0x0, sizeof(ingame.DataIntegrity));	//clear all player's array
+	SendFireUp();		//bcast a fireup message
+
+	sstrcpy(saveGameName, coopLobbySave.folder.c_str());
+	changeTitleMode(LOADSAVEGAME);
+	sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::HostStartingGame);
+}
+
 /* Start a multiplayer or skirmish game */
 void startMultiplayerGame()
 {
 	ASSERT_HOST_ONLY(return);
+
+	if (multiLobbyHasCoopSave())
+	{
+		startMultiplayerGameFromCoopSave();
+		return;
+	}
 
 	wz_command_interface_output("WZEVENT: startMultiplayerGame\n");
 	debug(LOG_INFO, "startMultiplayerGame");
@@ -5835,12 +6308,34 @@ void startMultiplayerGame()
 	}
 
 	debug(LOG_NET, "title mode STARTGAME is set--Starting Game!");
+	coopQueueCampaignIntroVideo();
 	changeTitleMode(STARTGAME);
 
 	if (NetPlay.isHost)
 	{
 		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::HostStartingGame);
 	}
+}
+
+/* Start a hosted co-op campaign by loading a save: the host's half of startMultiplayerGame() without a map or a fire-up message */
+static void startLoadedCoopGame(const std::string& savePath)
+{
+	ASSERT_HOST_ONLY(return);
+	debug(LOG_INFO, "Loading co-op campaign save: %s", savePath.c_str());
+
+	bMultiPlayer = true;
+	bMultiMessages = true;
+	NETsetPlayerConnectionStatus(CONNECTIONSTATUS_NORMAL, NET_ALL_PLAYERS);  // reset disconnect conditions
+	NEThaltJoining(true);							// nobody can join a loaded game yet
+	resetDataHash();
+	ingame.TimeEveryoneIsInGame = nullopt;
+	ingame.cheatsLocked = getLockedOptions().cheats;
+	ingame.endTime = nullopt;
+	ingame.isAllPlayersDataOK = false;
+	memset(&ingame.DataIntegrity, 0x0, sizeof(ingame.DataIntegrity));
+
+	sstrcpy(saveGameName, savePath.c_str());
+	changeTitleMode(LOADSAVEGAME);
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -6449,7 +6944,7 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 				HandleBadParam("NET_FIREUP given incorrect params.", 255, queue.index);
 				break;
 			}
-			debug(LOG_INFO, "NET_FIREUP was received ...");
+			debug(LOG_INFO, "NET_FIREUP was received ... (the lobby has a saved game: %d)", (int)multiLobbyHasCoopSave());
 			if (ingame.localOptionsReceived)
 			{
 				uint32_t randomSeed = 0;
@@ -6466,11 +6961,30 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 				ingame.cheatsLocked = getLockedOptions().cheats;
 				ingame.endTime = nullopt;
 				resetDataHash();
-				decideWRF();
 
 				bMultiPlayer = true;
 				bMultiMessages = true;
-				changeTitleMode(STARTGAME);
+				if (multiLobbyHasCoopSave())
+				{
+					// Start from the save the host picked, which we have (we couldn't have readied up without it)
+					const std::string downloadedSave = multiLobbyCoopSaveDownloadFolder(multiLobbyCoopSaveHash()) + ".gam";
+					if (!multiLobbyCoopSaveIsHere())
+					{
+						debug(LOG_ERROR, "The host started from a saved game we do not have: %s", downloadedSave.c_str());
+						displayRoomSystemMessage(_("The host started from a saved game that was not downloaded."));
+						NETpop(queue);
+						stopJoining(parent, ERROR_NOERROR);
+						return MultiMessagesResult::StoppedJoining;
+					}
+					sstrcpy(saveGameName, downloadedSave.c_str());
+					changeTitleMode(LOADSAVEGAME);
+				}
+				else
+				{
+					decideWRF();
+					coopQueueCampaignIntroVideo();
+					changeTitleMode(STARTGAME);
+				}
 
 				// Start the game before processing more messages.
 				NETpop(queue);
@@ -6712,6 +7226,19 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 		sendMap();
 	}
 
+	// The co-op save picker (the load screen) is up on top of the lobby: it takes all the input until it closes
+	if (bLoadSaveUp)
+	{
+		if (runLoadSave(false) && strlen(sRequestResult) > 0)
+		{
+			if (multiLobbySelectCoopSave(sRequestResult))
+			{
+				coopSaveChangedUpdate(*this);
+			}
+		}
+		return TITLECODE_CONTINUE;
+	}
+
 	// update boxes?
 	if (netPlayersUpdated || (NetPlay.isHost && mouseDown(MOUSE_LMB) && gameTime - lastrefresh > 500))
 	{
@@ -6949,6 +7476,11 @@ void WzMultiplayerOptionsTitleUI::render()
 	if (multiRequestUp)
 	{
 		widgDisplayScreen(psRScreen);								// show the Requester running
+	}
+
+	if (bLoadSaveUp)
+	{
+		displayLoadSave();											// the co-op save picker
 	}
 }
 
@@ -7216,6 +7748,18 @@ void WzMultiplayerOptionsTitleUI::start()
 		createLimitSet(); // should effectively just free it
 		updateStructureDisabledFlags();
 		updateGameOptions();
+	}
+
+	if (!coopLoadSavePath.empty() && ingame.side == InGameSide::HOST_OR_SINGLEPLAYER)
+	{
+		// Loading a co-op save: host now (this sets up everything a lobby host has), then load instead of waiting for players
+		const std::string savePath = std::move(coopLoadSavePath);
+		coopLoadSavePath.clear();
+		if (startHost())
+		{
+			startLoadedCoopGame(savePath);
+		}
+		return;
 	}
 
 	if (autogame_enabled() || getHostLaunch() == HostLaunch::Autohost)
@@ -7635,6 +8179,11 @@ bool multiplayPlayersCanCheckReady()
 		return false;
 	}
 
+	if (multiLobbyIsCoopCampaign())
+	{
+		return true; // everyone shares one player, so the team split check does not apply
+	}
+
 	return (allPlayersOnSameTeam(-1) == -1);
 }
 
@@ -7700,6 +8249,12 @@ bool multiplayPlayersReady()
 		{
 			numReadyPlayers++;
 		}
+	}
+
+	if (multiLobbyIsCoopCampaign())
+	{
+		// a single ready human is enough, and teams do not apply
+		return bReady && (numReadyPlayers > 0);
 	}
 
 	return bReady && (numReadyPlayers > 1) && (allPlayersOnSameTeam(-1) == -1);

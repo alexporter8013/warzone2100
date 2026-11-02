@@ -105,6 +105,7 @@ static bool wz_lobby_slashcommands = false;
 static bool wz_lobby_slashcommands_hostexit = false;
 static int wz_min_autostart_players = -1;
 static int wz_pathfinding_backend = -1;
+static std::string wz_coop_start_level;
 static std::string wz_lobby_game_to_connect_str;
 
 // Parse the --pathfindingbackend argument: a combined feature mask, or a
@@ -431,6 +432,7 @@ typedef enum
 	CLI_PATHBENCH,
 	CLI_PATHBENCHREPEATS,
 	CLI_PATHFINDINGBACKEND,
+	CLI_COOPLEVEL,
 	CLI_CORRIDORDUMP,
 #if defined(WZ_OS_WIN)
 	CLI_WIN_ENABLE_CONSOLE,
@@ -566,6 +568,7 @@ static const struct poptOption *getOptionsTable()
 		{ "pathbench", POPT_ARG_STRING, CLI_PATHBENCH,   N_("Time canned pathfinding requests and quit"), N_("name") },
 		{ "pathbenchrepeats", POPT_ARG_STRING, CLI_PATHBENCHREPEATS,   N_("How many times to time each pathfinding case"), N_("count") },
 		{ "pathfindingbackend", POPT_ARG_STRING, CLI_PATHFINDINGBACKEND,   N_("Force the pathfinding feature set for this run: a mask or comma-separated feature values (0 legacy with every feature off, 1 directional bias, 2 corridor lanes, 4 flow cost, 8 soft collision, 16 crowd mass, 32 bend hold, 64 bend hand, 128 wide lanes, 256 hand joint, 512 wide queue, 1024 turn vote, 2048 settle time, 4096 backoff, 8192 parked obstacle, 16384 still bump, 32768 build from here)"), N_("features") },
+		{ "coop-level", POPT_ARG_STRING, CLI_COOPLEVEL,   N_("Start a new co-op campaign at the given level instead of the campaign's first (for testing carry-over, e.g. CAM_1END, CAM_2A, CAM_3A)"), N_("level") },
 		{ "corridordump", POPT_ARG_STRING, CLI_CORRIDORDUMP,   N_("Detect corridors on the named map, dump the geometry, and quit"), N_("map") },
 #if defined(WZ_OS_WIN)
 		{ "enableconsole", POPT_ARG_NONE, CLI_WIN_ENABLE_CONSOLE,   N_("Attach or create a console window and display console output (Windows only)"), nullptr },
@@ -1561,6 +1564,15 @@ bool ParseCommandLine(int argc, const char * const *argv)
 			wz_pathfinding_backend = parsePathfindingBackendArg(token);
 			break;
 
+		case CLI_COOPLEVEL:
+			token = poptGetOptArg(poptCon);
+			if (token == nullptr)
+			{
+				qFatal("Bad co-op level name");
+			}
+			wz_coop_start_level = token;
+			break;
+
 		case CLI_CORRIDORDUMP:
 			token = poptGetOptArg(poptCon);
 			if (token == nullptr)
@@ -1903,6 +1915,11 @@ bool lobby_slashcommands_enabled()
 bool lobby_slashcommands_hostexit_enabled()
 {
 	return wz_lobby_slashcommands_hostexit;
+}
+
+const std::string &cli_coop_start_level()
+{
+	return wz_coop_start_level;
 }
 
 int cli_pathfinding_backend()

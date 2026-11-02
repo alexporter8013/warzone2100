@@ -2648,6 +2648,12 @@ bool recvMapFileRequested(NETQUEUE queue)
 		addConsoleMessage(_("Map was requested: SENDING MAP!"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 		debug(LOG_INFO, "Map was requested. Looking for %s", filename.c_str());
 	}
+	else if (multiLobbyCoopSaveFileForHash(hash, filename))
+	{
+		// the saved game the co-op lobby is set to start from
+		addConsoleMessage(_("Saved game was requested: SENDING SAVE!"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		debug(LOG_INFO, "Saved game was requested. Looking for %s", filename.c_str());
+	}
 	else
 	{
 		if (std::find(game.modHashes.begin(), game.modHashes.end(), hash) == game.modHashes.end())

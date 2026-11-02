@@ -39,6 +39,9 @@ enum LOADSAVE_MODE
 	SAVE_INGAME_SKIRMISH,
 	LOADREPLAY_FRONTEND_SKIRMISH,
 	LOADREPLAY_FRONTEND_MULTI,
+	SAVE_INGAME_COOP,		// co-op campaign (no _AUTO variant, so these must stay below 16)
+	LOAD_FRONTEND_COOP,
+	LOAD_INGAME_COOP,
 	LOAD_FRONTEND_MISSION_AUTO = 16,// internal use only
 	LOAD_MISSIONEND_AUTO,		// internal use only
 	LOAD_INGAME_MISSION_AUTO,	// internal use only
@@ -53,6 +56,7 @@ enum LOADSAVE_MODE
 /***************************************************************************/
 
 extern bool bLoadSaveUp;							// true when interface is up and should be run.
+LOADSAVE_MODE getLoadSaveMode();					// the mode of the load/save screen that is (or was last) up
 //the name of the save game to load from the front end
 extern char saveGameName[256];
 extern SaveGamePath_t lastSavePath;

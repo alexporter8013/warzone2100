@@ -601,6 +601,10 @@ std::shared_ptr<WzPlayerRow> WzPlayerRow::make(uint32_t playerIdx, const std::sh
 			}
 			return;
 		}
+		if (multiLobbyIsCoopCampaign())
+		{
+			return; // no positions or AI slots in a co-op campaign: everyone plays the same player
+		}
 		if (playerIdx == selectedPlayer || isHostOrAdmin())
 		{
 			uint32_t player = playerIdx;
@@ -696,7 +700,8 @@ void WzPlayerRow::updateState()
 
 	// hide team button if needed
 	bool trueMultiplayerMode = (bMultiPlayer && NetPlay.bComms) || (!NetPlay.isHost && ingame.localJoiningInProgress);
-	if (!alliancesSetTeamsBeforeGame(game.alliance) && !NetPlay.players[playerIdx].isSpectator && !trueMultiplayerMode)
+	const bool isCoop = multiLobbyIsCoopCampaign();
+	if (isCoop || (!alliancesSetTeamsBeforeGame(game.alliance) && !NetPlay.players[playerIdx].isSpectator && !trueMultiplayerMode))
 	{
 		teamButton->hide();
 	}
@@ -704,6 +709,8 @@ void WzPlayerRow::updateState()
 	{
 		teamButton->show();
 	}
+	// a co-op campaign has a single shared player, so there is no per-slot colour either
+	colorButton->show(!isCoop || NetPlay.players[playerIdx].isSpectator);
 
 	// update color tooltip
 	if ((selectedPlayer == playerIdx || NetPlay.isHost) && (!NetPlay.players[playerIdx].isSpectator))
@@ -717,7 +724,11 @@ void WzPlayerRow::updateState()
 
 	// update player info box tooltip
 	std::string playerInfoTooltip;
-	if ((selectedPlayer == playerIdx || NetPlay.isHost)
+	if (isCoop)
+	{
+		// nothing to configure on a co-op slot
+	}
+	else if ((selectedPlayer == playerIdx || NetPlay.isHost)
 		&& NetPlay.players[playerIdx].allocated
 		&& !locked.position
 		&& !isSpectatorOnlySlot(playerIdx)

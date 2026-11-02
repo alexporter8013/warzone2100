@@ -207,6 +207,8 @@ enum
 	FRONTEND_CHALLENGES,
 	FRONTEND_HOST			= 20300,	//multiplayer menu options
 	FRONTEND_JOIN,
+	FRONTEND_COOP,						// co-op campaign (multiplayer menu)
+	FRONTEND_COOP_LOAD,					// load a co-op campaign save (multiplayer menu)
 	FE_P0,								// player 0 buton
 	FE_P1,								// player 1 buton
 	FE_P2,								// player 2 buton

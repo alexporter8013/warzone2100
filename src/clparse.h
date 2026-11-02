@@ -45,6 +45,9 @@ const std::string& cli_lobby_game_to_connect_str();
 
 int min_autostart_player_count();
 
+/// The --coop-level override (empty if not set): the level a new co-op campaign starts at. Test hook for carry-over.
+const std::string &cli_coop_start_level();
+
 /// The --pathfindingbackend override, or -1 if not set. Test/dev hook to force a
 /// backend for a run instead of taking it from the lobby or config.
 int cli_pathfinding_backend();

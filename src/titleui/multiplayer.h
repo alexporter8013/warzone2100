@@ -73,6 +73,10 @@ public:
 
 	void openMapChooser();
 
+	// Co-op campaign lobby: start from a save (host only)
+	void openSavePicker();
+	void clearSavedGame();
+
 	void closeAllChoosers();
 
 	void screenSizeDidChange(unsigned int oldWidth, unsigned int oldHeight, unsigned int newWidth, unsigned int newHeight) override;

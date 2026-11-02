@@ -546,6 +546,8 @@ void startMultiPlayerMenu()
 #if !defined(__EMSCRIPTEN__)
 	addTextButton(FRONTEND_HOST,     FRONTEND_POS2X, FRONTEND_POS2Y, _("Host Game"), WBUT_TXTCENTRE);
 	addTextButton(FRONTEND_JOIN,     FRONTEND_POS3X, FRONTEND_POS3Y, _("Join Game"), WBUT_TXTCENTRE);
+	addTextButton(FRONTEND_COOP,     FRONTEND_POS4X, FRONTEND_POS4Y, _("Host Co-op Campaign"), WBUT_TXTCENTRE);
+	addTextButton(FRONTEND_COOP_LOAD, FRONTEND_POS5X, FRONTEND_POS5Y, _("Load Co-op Campaign"), WBUT_TXTCENTRE);
 #endif
 	addTextButton(FRONTEND_REPLAY,   FRONTEND_POS7X, FRONTEND_POS7Y, _("View Replay"), WBUT_TXTCENTRE);
 
@@ -557,13 +559,54 @@ void startMultiPlayerMenu()
 	addSmallTextButton(FRONTEND_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, buf, 0);
 }
 
+// Set up what hosting a co-op campaign needs before its lobby (or a save load) can start. Returns false if there are no campaigns.
+static bool startCoopCampaignNetworking()
+{
+	NETshutdown();
+	NetPlay.bComms = true;
+	ingame.side = InGameSide::HOST_OR_SINGLEPLAYER;
+	bMultiPlayer = true;
+	bMultiMessages = true;
+	NETinit(war_getHostConnectionProvider());
+	NETinitPortMapping();
+	if (!multiLobbyInitCoopCampaign())
+	{
+		NETshutdown();
+		NetPlay.bComms = false;
+		bMultiPlayer = false;
+		bMultiMessages = false;
+		return false;
+	}
+	return true;
+}
+
 bool runMultiPlayerMenu()
 {
 	if (bLoadSaveUp)
 	{
 		if (runLoadSave(false)) // check for file name.
 		{
-			loadOK();
+			if (getLoadSaveMode() == LOAD_FRONTEND_COOP)
+			{
+				if (strlen(sRequestResult))
+				{
+					// Host first, then load the save (the lobby does the hosting and then starts the load)
+					multiLobbyBeginCoopLoad(sRequestResult);
+					changeTitleUI(std::make_shared<WzMultiplayerOptionsTitleUI>(wzTitleUICurrent));
+				}
+				else
+				{
+					// cancelled: undo the networking set up for the load
+					NETshutdown();
+					NetPlay.bComms = false;
+					bMultiPlayer = false;
+					bMultiMessages = false;
+				}
+			}
+			else
+			{
+				loadOK();
+			}
 		}
 	}
 	else
@@ -585,6 +628,18 @@ bool runMultiPlayerMenu()
 			NETinitPortMapping();
 			game.type = LEVEL_TYPE::SKIRMISH;		// needed?
 			changeTitleUI(std::make_shared<WzMultiplayerOptionsTitleUI>(wzTitleUICurrent));
+			break;
+		case FRONTEND_COOP:
+			if (startCoopCampaignNetworking())
+			{
+				changeTitleUI(std::make_shared<WzMultiplayerOptionsTitleUI>(wzTitleUICurrent));
+			}
+			break;
+		case FRONTEND_COOP_LOAD:
+			if (startCoopCampaignNetworking())
+			{
+				addLoadSave(LOAD_FRONTEND_COOP, _("Load Co-op Campaign Saved Game"));	// the lobby hosts it and loads it when this returns
+			}
 			break;
 		case FRONTEND_JOIN:
 			// Don't call `NETinit()` just yet.

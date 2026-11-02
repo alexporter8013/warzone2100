@@ -824,6 +824,12 @@ void startGameBeforeLevelLoad()
 		NETadjustConnectedTimeoutForClients();
 	}
 
+	if (isCoopGame() && realSelectedPlayer < game.maxPlayers && !NetPlay.players[realSelectedPlayer].isSpectator)
+	{
+		// every co-op client plays the shared player; realSelectedPlayer stays our own connection slot
+		selectedPlayer = COOP_CAMPAIGN_PLAYER;
+	}
+
 	SetGameMode(GS_NORMAL);
 	initLoadingScreen(true);
 
@@ -903,7 +909,7 @@ bool startGameAfterLevelLoad()
 			// should not happen
 			break;
 		case ActivitySink::GameMode::CAMPAIGN:
-			// replays not currently supported
+			// replays not currently supported (a co-op campaign is a campaign, so it isn't recorded either)
 			break;
 		case ActivitySink::GameMode::CHALLENGE:
 		case ActivitySink::GameMode::SKIRMISH:
@@ -1001,6 +1007,12 @@ LoadingTask<> saveGameLoadAbortOnFailure(ResourceLoadingController& controller)
 
 LoadingTask<> loadSaveGameResourceTaskImpl(ResourceLoadingController &controller)
 {
+	if (runningMultiplayer())
+	{
+		// (as for a new game: the connected timeouts of clients in a loading game are longer than in the lobby)
+		NETadjustConnectedTimeoutForClients();
+	}
+
 	co_await controller.yieldFrame();
 
 	SetGameMode(GS_NORMAL);

@@ -154,6 +154,11 @@ void loadSaveScreenSizeDidChange(unsigned int oldWidth, unsigned int oldHeight, 
 	psRequestScreen->screenSizeDidChange(oldWidth, oldHeight, newWidth, newHeight);
 }
 
+LOADSAVE_MODE getLoadSaveMode()
+{
+	return bLoadSaveMode;
+}
+
 static std::string getNewSaveGamePathFromMode(LOADSAVE_MODE savemode)
 {
 	std::string result;
@@ -184,6 +189,11 @@ static std::string getNewSaveGamePathFromMode(LOADSAVE_MODE savemode)
 		break;
 	case SAVE_INGAME_SKIRMISH:
 		result = astringf("%s%s/", SaveGamePath, "skirmish");
+		break;
+	case SAVE_INGAME_COOP:
+	case LOAD_FRONTEND_COOP:
+	case LOAD_INGAME_COOP:
+		result = astringf("%s%s/", SaveGamePath, "coop");
 		break;
 	case LOADREPLAY_FRONTEND_SKIRMISH:
 		result = astringf("%s%s/", ReplayPath, "skirmish");
@@ -220,6 +230,7 @@ bool addLoadSave(LOADSAVE_MODE savemode, const char *title)
 	case SAVE_MISSIONEND:
 	case SAVE_INGAME_MISSION:
 	case SAVE_INGAME_SKIRMISH:
+	case SAVE_INGAME_COOP:
 		bLoad = false;
 		break;
 	case LOADREPLAY_FRONTEND_SKIRMISH:
@@ -232,6 +243,7 @@ bool addLoadSave(LOADSAVE_MODE savemode, const char *title)
 
 	bool bIngame = bLoadSaveMode == LOAD_INGAME_MISSION || bLoadSaveMode == SAVE_INGAME_MISSION
 	    || bLoadSaveMode == LOAD_INGAME_SKIRMISH || bLoadSaveMode == SAVE_INGAME_SKIRMISH
+	    || bLoadSaveMode == SAVE_INGAME_COOP || bLoadSaveMode == LOAD_INGAME_COOP
 	    || bLoadSaveMode == LOAD_INGAME_MISSION_AUTO || bLoadSaveMode == LOAD_INGAME_SKIRMISH_AUTO;
 
 	modeLoad = bLoad;
@@ -834,7 +846,7 @@ bool runLoadSave(bool bResetMissionWidgets)
 		return true;
 	}
 	NewSaveGamePath = getNewSaveGamePathFromMode(bLoadSaveMode);
-	if (id == LOADENTRY_START && modeLoad && !modeReplay) // [auto] or [..], ignore click for saves
+	if (id == LOADENTRY_START && modeLoad && !modeReplay && bLoadSaveMode != LOAD_FRONTEND_COOP && bLoadSaveMode != LOAD_INGAME_COOP) // [auto] or [..], ignore click for saves (co-op has no autosave directory)
 	{
 		int iLoadSaveMode = (int)bLoadSaveMode; // for evil integer arithmetics
 		bLoadSaveMode = (enum LOADSAVE_MODE)(iLoadSaveMode ^ 16); // toggle _AUTO bit

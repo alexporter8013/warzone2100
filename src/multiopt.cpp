@@ -41,6 +41,9 @@
 #include "map.h"
 #include "game.h"			// for loading maps
 #include "message.h"		// for clearing messages.
+#include "campaigninfo.h"
+#include "difficulty.h"
+#include <nlohmann/json.hpp>
 #include "main.h"
 #include "display3d.h"		// for changing the viewpoint
 #include "power.h"
@@ -76,6 +79,7 @@
 
 #define MAX_STRUCTURE_LIMITS 4096 // Set a high (but explicit) maximum for the number of structure limits supported
 static constexpr uint32_t MaxModHashes = 255;
+static constexpr uint32_t MaxCampaignTweakOptionsLength = 2048;
 
 // send complete game info set!
 void sendOptions()
@@ -120,6 +124,27 @@ void sendOptions()
 	game.playerReconnectWaitSeconds = clampPlayerReconnectWaitSeconds(game.playerReconnectWaitSeconds);
 	NETuint16_t(w, game.playerReconnectWaitSeconds);
 	NETuint16_t(w, game.pathfindingBackend);
+	if (game.type == LEVEL_TYPE::CAMPAIGN)
+	{
+		// Co-op campaign: the host decides the campaign setup that the simulation depends on
+		NETuint8_t(w, static_cast<uint8_t>(getDifficultyLevel()));
+		nlohmann::json tweakOptions = nlohmann::json::object();
+		for (const auto& option : getCamTweakOptions())
+		{
+			tweakOptions[option.first] = option.second;
+		}
+		std::string tweakOptionsStr = tweakOptions.dump();
+		if (tweakOptionsStr.size() > MaxCampaignTweakOptionsLength)
+		{
+			debug(LOG_ERROR, "Campaign tweak options are too long to send (%zu bytes) - sending defaults", tweakOptionsStr.size());
+			tweakOptionsStr = "{}";
+		}
+		NETstring(w, tweakOptionsStr, MaxCampaignTweakOptionsLength);
+		// A co-op lobby that starts from a save: the players download it from the host by this hash
+		const Sha256 saveHash = multiLobbyCoopSaveHash();
+		NETbin(w, saveHash.bytes, saveHash.Bytes);
+		NETstring(w, multiLobbyCoopSaveName(), 128);
+	}
 
 	for (unsigned i = 0; i < MAX_PLAYERS; i++)
 	{
@@ -168,6 +193,78 @@ void sendOptions()
 }
 
 std::vector<MULTISTRUCTLIMITS> oldStructureLimits;
+
+namespace {
+enum class FileRequestResult {
+	StartingDownload,
+	DownloadInProgress,
+	FileExists,
+	FailedToOpenFileForWriting
+};
+}
+
+// Ask the host for the file with this hash (a map, a mod, a co-op save), to be written to `filename`
+static FileRequestResult requestFile(Sha256 &hash, char const *filename)
+{
+	if (std::any_of(NET_getDownloadingWzFiles().begin(), NET_getDownloadingWzFiles().end(), [&hash](WZFile const &file) { return file.hash == hash; }))
+	{
+		debug(LOG_INFO, "Already requested file, continue waiting.");
+		return FileRequestResult::DownloadInProgress;  // Downloading the file already
+	}
+
+	if (!PHYSFS_exists(filename))
+	{
+		debug(LOG_INFO, "Creating new file %s", filename);
+	}
+	else if (findHashOfFile(filename) != hash)
+	{
+		debug(LOG_INFO, "Overwriting old incomplete or corrupt file %s", filename);
+	}
+	else
+	{
+		pal_Init(); // Palette could be modded. // Why is this here - isn't there a better place for it?
+		return FileRequestResult::FileExists;  // Have the file already.
+	}
+
+	PHYSFS_file *pFileHandle = PHYSFS_openWrite(filename);
+	if (pFileHandle == nullptr)
+	{
+		debug(LOG_ERROR, "Failed to open %s for writing: %s", filename, WZ_PHYSFS_getLastError());
+		return FileRequestResult::FailedToOpenFileForWriting;
+	}
+
+	NET_addDownloadingWZFile(WZFile(pFileHandle, filename, hash));
+
+	// Request the map/mod from the host
+	auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_FILE_REQUESTED);
+	NETbin(w, hash.bytes, hash.Bytes);
+	NETend(w);
+
+	return FileRequestResult::StartingDownload;  // Starting download now.
+}
+
+bool requestCoopSaveDownload()
+{
+	ASSERT_OR_RETURN(false, !NetPlay.isHost && multiLobbyHasCoopSave(), "No co-op save to download");
+	Sha256 saveHash = multiLobbyCoopSaveHash();
+	const std::string saveFolder = multiLobbyCoopSaveDownloadFolder(saveHash);
+	PHYSFS_mkdir(saveFolder.c_str());
+	const std::string saveFilename = saveFolder + "/gamestate.wz";
+	switch (requestFile(saveHash, saveFilename.c_str()))
+	{
+		case FileRequestResult::StartingDownload:
+			debug(LOG_INFO, "Requesting the host's saved game %s", saveHash.toString().c_str());
+			addConsoleMessage(_("SAVED GAME REQUESTED!"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+			return true;
+		case FileRequestResult::DownloadInProgress:
+		case FileRequestResult::FileExists:
+			return true;
+		case FileRequestResult::FailedToOpenFileForWriting:
+			debug(LOG_ERROR, "Failed to open file for writing - unable to download the saved game: %s", saveFilename.c_str());
+			return false;
+	}
+	return false;
+}
 
 // ////////////////////////////////////////////////////////////////////////////
 // options for a game. (usually recvd in frontend)
@@ -251,6 +348,32 @@ bool recvOptions(NETQUEUE queue)
 	}
 	game.playerReconnectWaitSeconds = tempPlayerReconnectWaitSeconds;
 	NETuint16_t(r, game.pathfindingBackend);
+	optional<DIFFICULTY_LEVEL> hostCampaignDifficulty;
+	std::unordered_map<std::string, nlohmann::json> hostCampaignTweakOptions;
+	Sha256 hostCoopSaveHash;
+	hostCoopSaveHash.setZero();
+	std::string hostCoopSaveName;
+	if (game.type == LEVEL_TYPE::CAMPAIGN)
+	{
+		uint8_t difficulty = 0;
+		std::string tweakOptionsStr;
+		NETuint8_t(r, difficulty);
+		NETstring(r, tweakOptionsStr, MaxCampaignTweakOptionsLength);
+		NETbin(r, hostCoopSaveHash.bytes, hostCoopSaveHash.Bytes);
+		NETstring(r, hostCoopSaveName, 128);
+		auto tweakOptions = nlohmann::json::parse(tweakOptionsStr, nullptr, false);
+		if (difficulty > static_cast<uint8_t>(DL_INSANE) || !tweakOptions.is_object())
+		{
+			debug(LOG_ERROR, "Invalid campaign setup specified (difficulty: %" PRIu8 ")", difficulty);
+			NETend(r);
+			return false;
+		}
+		hostCampaignDifficulty = static_cast<DIFFICULTY_LEVEL>(difficulty);
+		for (auto it = tweakOptions.begin(); it != tweakOptions.end(); ++it)
+		{
+			hostCampaignTweakOptions[it.key()] = it.value();
+		}
+	}
 
 	for (i = 0; i < MAX_PLAYERS; i++)
 	{
@@ -323,6 +446,15 @@ bool recvOptions(NETQUEUE queue)
 
 	NETend(r);
 
+	if (hostCampaignDifficulty.has_value() && !NetPlay.isHost)
+	{
+		multiLobbyApplyHostCampaignSetup(hostCampaignDifficulty.value(), std::move(hostCampaignTweakOptions));
+	}
+	if (!NetPlay.isHost)
+	{
+		multiLobbySetAnnouncedCoopSave(hostCoopSaveHash, hostCoopSaveName); // (a zero hash: no save)
+	}
+
 	// Do not print limits information if we don't have them loaded
 	if (bLimiterLoaded)
 	{
@@ -358,50 +490,6 @@ bool recvOptions(NETQUEUE queue)
 		buildMapList();
 	}
 
-	enum class FileRequestResult {
-		StartingDownload,
-		DownloadInProgress,
-		FileExists,
-		FailedToOpenFileForWriting
-	};
-	auto requestFile = [](Sha256 &hash, char const *filename) -> FileRequestResult {
-		if (std::any_of(NET_getDownloadingWzFiles().begin(), NET_getDownloadingWzFiles().end(), [&hash](WZFile const &file) { return file.hash == hash; }))
-		{
-			debug(LOG_INFO, "Already requested file, continue waiting.");
-			return FileRequestResult::DownloadInProgress;  // Downloading the file already
-		}
-
-		if (!PHYSFS_exists(filename))
-		{
-			debug(LOG_INFO, "Creating new file %s", filename);
-		}
-		else if (findHashOfFile(filename) != hash)
-		{
-			debug(LOG_INFO, "Overwriting old incomplete or corrupt file %s", filename);
-		}
-		else
-		{
-			pal_Init(); // Palette could be modded. // Why is this here - isn't there a better place for it?
-			return FileRequestResult::FileExists;  // Have the file already.
-		}
-
-		PHYSFS_file *pFileHandle = PHYSFS_openWrite(filename);
-		if (pFileHandle == nullptr)
-		{
-			debug(LOG_ERROR, "Failed to open %s for writing: %s", filename, WZ_PHYSFS_getLastError());
-			return FileRequestResult::FailedToOpenFileForWriting;
-		}
-
-		NET_addDownloadingWZFile(WZFile(pFileHandle, filename, hash));
-
-		// Request the map/mod from the host
-		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_FILE_REQUESTED);
-		NETbin(w, hash.bytes, hash.Bytes);
-		NETend(w);
-
-		return FileRequestResult::StartingDownload;  // Starting download now.
-	};
-
 	LEVEL_DATASET *mapData = levFindDataSet(game.map, &game.hash);
 	// See if we have the map or not
 	if (mapData == nullptr)
@@ -435,6 +523,12 @@ bool recvOptions(NETQUEUE queue)
 				debug(LOG_FATAL, "Failed to open file for writing - unable to download file: %s", filename);
 				return false;
 		}
+	}
+
+	// A co-op lobby that starts from a save: the player decides whether to trust the host with a download first
+	if (!NetPlay.isHost && multiLobbyHasCoopSave())
+	{
+		multiLobbyOfferCoopSaveDownload(); // asks (once per save), then calls requestCoopSaveDownload() if they agree
 	}
 
 	for (Sha256 &hash : game.modHashes)
@@ -617,6 +711,11 @@ static bool gameInit(bool fromSnapshot)
 
 	for (player = 1; player < MAX_CONNECTED_PLAYERS; player++)
 	{
+		if (game.type == LEVEL_TYPE::CAMPAIGN)
+		{
+			break; // co-op campaign: every other player is a script-driven campaign player, keep them all
+		}
+
 		// we want to remove disabled AI & all the other players that don't belong
 		if ((NetPlay.players[player].difficulty == AIDifficulty::DISABLED || player >= game.maxPlayers)
 			&& player != scavengerPlayer()
@@ -720,6 +819,8 @@ bool multiGameShutdown()
 	}
 
 	shutdownGameStartScreen();	// make sure the start screen overlay is closed (in case the game shuts down before it fully starts)
+
+	multiLobbyRestoreLocalCampaignSetup();	// a co-op client goes back to its own campaign difficulty
 
 	sendLeavingMsg();							// say goodbye
 

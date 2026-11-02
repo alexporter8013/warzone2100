@@ -201,6 +201,21 @@ bool writeGameStateBlobToFolder(const std::string &folderPath, SaveType saveType
 
 // MARK: - Cold-load (level load + game start) wiring
 
+/// What a lobby needs to know about a co-op save, read without touching any live state.
+struct LobbySaveInfo
+{
+	std::string blobPath;      ///< the gamestate.wz file (a PHYSFS path)
+	Sha256 blobHash;           ///< its SHA-256: how the other players ask the host for it
+	std::string levelName;
+	std::string campaignName;
+	uint8_t difficulty = 2;    ///< a DIFFICULTY_LEVEL
+	bool isCoopCampaign = false;
+};
+
+/// Read the setup section of the save at folderPath (the name the load menu gives, with or without ".gam") for a lobby.
+/// Returns false if it can't be read. Restores nothing.
+bool peekCoopSaveForLobby(const std::string &folderPath, LobbySaveInfo &out);
+
 /// True if folderPath looks like a new-format savegame folder (contains the state blob). Used by
 /// the load entry point to route new-format saves here while leaving legacy .gam saves untouched.
 bool isNewFormatSaveFolder(const std::string &folderPath);
