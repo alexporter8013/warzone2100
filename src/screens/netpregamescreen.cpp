@@ -962,6 +962,7 @@ void WzGameStartOverlayScreen_CLICKFORM::transitionToNextState()
 		recalcLayout();
 	};
 
+	debug(LOG_INFO, "Game start overlay: leaving state %d", static_cast<int>(currentState));
 	switch (currentState)
 	{
 		case PregameWaitingState::Uninitialized:

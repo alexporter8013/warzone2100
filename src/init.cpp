@@ -1948,6 +1948,7 @@ static bool stageThreeInitialiseSync()
 
 	if (bMultiPlayer)
 	{
+		debug(LOG_INFO, "Multiplayer game start: announcing ourselves (cold load: %d, comms: %d)", (int)wasColdLoad, (int)NetPlay.bComms);
 		cameraToHome(selectedPlayer, false, fromSave);
 		playerResponding(); // say howdy!
 		if (NetPlay.bComms && !NETisReplay())

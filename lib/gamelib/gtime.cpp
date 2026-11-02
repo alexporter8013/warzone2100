@@ -263,6 +263,7 @@ GameTimeUpdateResult gameTimeUpdate(bool mayUpdate, bool forceTryGameTickUpdate)
 		if (!waitingOnPlayersStartTime.has_value())
 		{
 			waitingOnPlayersStartTime = realTime;
+			debug(LOG_INFO, "Game time is waiting for GAME_GAME_TIME from other players. gameTime = %u, player times are {%s}", gameTime, listToString("%u", ", ", gameQueueTime, gameQueueTime + MAX_CONNECTED_PLAYERS).c_str());
 		}
 
 		bool shouldDisplayWaitingStatus = true;
@@ -386,6 +387,10 @@ bool gameTimeIsStopped(void)
 void gameTimeStop(void)
 {
 	stopCount += 1;
+	if (NetPlay.bComms && bMultiPlayer)
+	{
+		debug(LOG_INFO, "gameTimeStop: stop count is now %d (gameTime: %u)", stopCount, gameTime);
+	}
 
 	graphicsTimeFraction = 0.f;
 }
@@ -397,6 +402,10 @@ void gameTimeStart(void)
 
 	prevRealTime = wzGetTicks();
 	stopCount = std::max<int>(stopCount - 1, 0);
+	if (NetPlay.bComms && bMultiPlayer)
+	{
+		debug(LOG_INFO, "gameTimeStart: stop count is now %d (gameTime: %u)", stopCount, gameTime);
+	}
 }
 
 void gameTimeRebaseRealTimeBase()

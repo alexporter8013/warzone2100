@@ -1011,11 +1011,14 @@ LoadingTask<> loadSaveGameResourceTaskImpl(ResourceLoadingController &controller
 	// devForceOldSavegameLoad config option (or the temporary --tmp-prefer-old-save CLI flag) forces the
 	// legacy loadGameInit even for a dual-written folder (its legacy .json files are always still present);
 	// a folder without a blob always takes the legacy path.
+	debug(LOG_INFO, "Loading saved game \"%s\" (multiplayer: %d, comms: %d, host: %d, controller slot %u)", saveGameName, (int)bMultiPlayer, (int)NetPlay.bComms, (int)NetPlay.isHost, realSelectedPlayer);
 	if (!war_getDevForceOldSavegameLoad() && !gamestate::savegame::preferLegacyLoadOverride() && gamestate::savegame::isNewFormatSaveFolder(saveGameName))
 	{
 		if (!(co_await gamestate::savegame::coldLoadGameInit(controller, saveGameName))) {
+			debug(LOG_ERROR, "Cold load of \"%s\" failed", saveGameName);
 			co_return load_fail();
 		}
+		debug(LOG_INFO, "Cold load finished (multiplayer: %d, comms: %d, controller slot %u, shared player %u, gameTime %u)", (int)bMultiPlayer, (int)NetPlay.bComms, realSelectedPlayer, selectedPlayer, gameTime);
 	}
 	else if (!(co_await loadGameInit(controller, GameLoadDetails::makeUserSaveGameLoad(saveGameName)))) {
 		co_return load_fail();
@@ -1023,7 +1026,9 @@ LoadingTask<> loadSaveGameResourceTaskImpl(ResourceLoadingController &controller
 
 	co_await controller.yieldFrame();
 
-	co_return saveGameLoadAfter() ? load_ok() : load_fail();
+	const bool afterOk = saveGameLoadAfter();
+	debug(LOG_INFO, "Saved game load is complete (ok: %d)", (int)afterOk);
+	co_return afterOk ? load_ok() : load_fail();
 }
 
 } // anonymous namespace

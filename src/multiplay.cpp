@@ -1640,6 +1640,8 @@ bool recvMessage()
 					break;
 				}
 
+				debug(LOG_INFO, "NET_PLAYERRESPONDING: player %" PRIu32 " (was joining: %d)", player_id, (int)ingame.JoiningInProgress[player_id]);
+
 				// This player is now with us!
 				if (ingame.JoiningInProgress[player_id])
 				{

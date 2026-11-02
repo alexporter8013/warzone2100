@@ -655,6 +655,7 @@ static bool gameInit(bool fromSnapshot)
 // say hi to everyone else....
 void playerResponding()
 {
+	debug(LOG_INFO, "playerResponding: this is controller slot %u (shared player %u, host slot %u)", realSelectedPlayer, selectedPlayer, NetPlay.hostPlayer);
 	ingame.startTime = std::chrono::steady_clock::now();
 	ingame.localJoiningInProgress = false; // No longer joining.
 	if (selectedPlayer < MAX_CONNECTED_PLAYERS)
@@ -689,6 +690,7 @@ bool multiStartScreenInit()
 {
 	bDisplayMultiJoiningStatus = 1; // always display this
 	gameTimeStop();
+	debug(LOG_INFO, "Game start overlay up, game time stopped (gameTime: %u)", gameTime);
 	intHideInterface(true);
 	intHideInGameOptionsButton();
 	createGameStartScreen([] {
@@ -697,6 +699,7 @@ bool multiStartScreenInit()
 		intShowInterface();
 		// restart gameTime
 		gameTimeStart();
+		debug(LOG_INFO, "Game start overlay closed, game time started (gameTime: %u)", gameTime);
 	});
 
 	return true;
