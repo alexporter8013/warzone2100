@@ -1196,7 +1196,7 @@ void fpathSetBlockingMap(PATHJOB *psJob)
 				map[x + y * gameWorld.map.width] = fpathBaseBlockingTile(gameWorld.map, x, y, type.propulsion, type.owner, type.moveType);
 				checksumMap ^= map[x + y * gameWorld.map.width] * (factor = 3 * factor + 1);
 			}
-		if (!isHumanPlayer(type.owner) && type.moveType == FMT_MOVE)
+		if (!isHumanGamePlayer(type.owner) && type.moveType == FMT_MOVE)
 		{
 			std::vector<uint8_t> &dangerMap = blockMap->dangerMap;
 			dangerMap.resize(static_cast<size_t>(gameWorld.map.width) * static_cast<size_t>(gameWorld.map.height));

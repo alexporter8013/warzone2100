@@ -1868,7 +1868,7 @@ void actionUpdateDroid(DROID *psDroid)
 				else if (order->type == DORDER_DEMOLISH && structureAtPos->player != psDroid->player)
 				{
 					bool ObjAllied = (aiCheckAlliances(psDroid->player, structureAtPos->player));
-					bool ObjDepartedAlly = (bMultiPlayer && NetPlay.players[structureAtPos->player].difficulty == AIDifficulty::HUMAN && !NetPlay.players[structureAtPos->player].allocated);
+					bool ObjDepartedAlly = (!isCampaignGame() && NetPlay.players[structureAtPos->player].difficulty == AIDifficulty::HUMAN && !NetPlay.players[structureAtPos->player].allocated);
 					if (!ObjAllied || !ObjDepartedAlly)
 					{
 						cantDoRepairLikeAction = true;
@@ -2444,7 +2444,7 @@ static void actionDroidBase(DROID *psDroid, DROID_ACTION_DATA *psAction)
 			}
 
 			//in multiPlayer cannot electronically attack a transporter
-			if (bMultiPlayer
+			if (!isCampaignGame()
 			    && psAction->psObj->type == OBJ_DROID
 			    && ((DROID*)psAction->psObj)->isTransporter())
 			{

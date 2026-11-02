@@ -180,7 +180,7 @@ TeamViewScope teamViewScopeFor(uint32_t viewer, uint32_t target)
 	{
 		return TeamViewScope::Full;
 	}
-	if (!bMultiPlayer || game.alliance == NO_ALLIANCES || !aiCheckAlliances(viewer, target))
+	if (isCampaignGame() || game.alliance == NO_ALLIANCES || !aiCheckAlliances(viewer, target))
 	{
 		return TeamViewScope::None;
 	}
@@ -257,8 +257,8 @@ static ResearchPerspective teamPerspective(const std::vector<uint32_t>& members,
 std::vector<ResearchPerspective> researchPerspectivesFor(uint32_t viewer)
 {
 	const bool watching = viewer >= MAX_PLAYERS || (bMultiPlayer && NetPlay.players[viewer].isSpectator);
-	const bool shared = bMultiPlayer && alliancesSharedResearch(game.alliance);
-	const bool teamsAreFixed = bMultiPlayer && game.alliance != NO_ALLIANCES && alliancesFixed(game.alliance);
+	const bool shared = !isCampaignGame() && alliancesSharedResearch(game.alliance);
+	const bool teamsAreFixed = !isCampaignGame() && game.alliance != NO_ALLIANCES && alliancesFixed(game.alliance);
 
 	const std::vector<VisibleSeat> visible = visibleSeatsFor(viewer);
 	std::map<int32_t, std::vector<uint32_t>> byTeam;

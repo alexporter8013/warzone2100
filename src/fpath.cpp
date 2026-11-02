@@ -708,7 +708,7 @@ protected:
 		PROPULSION_STATS *psPropStats = psDroid->getPropulsionStats();
 
 		// override for AI to blast our way through stuff
-		if (!isHumanPlayer(psDroid->player) && moveType == FMT_MOVE)
+		if (!isHumanGamePlayer(psDroid->player) && moveType == FMT_MOVE)
 		{
 			moveType = (psDroid->asWeaps[0].nStat == 0) ? FMT_MOVE : FMT_ATTACK;
 		}

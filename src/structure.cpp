@@ -1209,7 +1209,7 @@ bool structSetManufacture(STRUCTURE *psStruct, DROID_TEMPLATE *psTempl, QUEUE_MO
 	/* psTempl might be NULL if the build is being cancelled in the middle */
 	ASSERT_OR_RETURN(false, !psTempl
 	                 || (validTemplateForFactory(psTempl, psStruct, true) && researchedTemplate(psTempl, psStruct->player, true, true))
-	                 || psStruct->player == scavengerPlayer() || !bMultiPlayer,
+	                 || psStruct->player == scavengerPlayer() || isCampaignGame(),
 	                 "Wrong template for player %d factory, type %d.", psStruct->player, psStruct->pStructureType->type);
 
 	FACTORY *psFact = &psStruct->pFunctionality->factory;
@@ -1689,7 +1689,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 # pragma GCC diagnostic ignored "-Wnull-dereference"
 #endif
 					debug(LOG_ERROR, "Player %u (%s): is building %s at (%d, %d) but found %s already at (%d, %d)",
-					      player, isHumanPlayer(player) ? "Human" : "AI", getStatsName(pStructureType), map.x, map.y,
+					      player, isHumanGamePlayer(player) ? "Human" : "AI", getStatsName(pStructureType), map.x, map.y,
 					      getStatsName(getTileStructure(world.map, tileX, tileY)->pStructureType), tileX, tileY);
 #if defined(WZ_CC_GNU) && !defined(WZ_CC_INTEL) && !defined(WZ_CC_CLANG) && (7 <= __GNUC__)
 # pragma GCC diagnostic pop
@@ -1770,7 +1770,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 					psBuilding->asWeaps[weapon].lastFired = 0;
 					psBuilding->asWeaps[weapon].shotsFired = 0;
 					//in multiPlayer make the Las-Sats require re-loading from the start
-					if (bMultiPlayer && pStructureType->psWeapStat[0]->weaponSubClass == WSC_LAS_SAT)
+					if (!isCampaignGame() && pStructureType->psWeapStat[0]->weaponSubClass == WSC_LAS_SAT)
 					{
 						psBuilding->asWeaps[0].lastFired = gameTime;
 					}
@@ -1787,7 +1787,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 				psBuilding->asWeaps[0].lastFired = 0;
 				psBuilding->asWeaps[0].shotsFired = 0;
 				//in multiPlayer make the Las-Sats require re-loading from the start
-				if (bMultiPlayer && pStructureType->psWeapStat[0]->weaponSubClass == WSC_LAS_SAT)
+				if (!isCampaignGame() && pStructureType->psWeapStat[0]->weaponSubClass == WSC_LAS_SAT)
 				{
 					psBuilding->asWeaps[0].lastFired = gameTime;
 				}
@@ -3130,7 +3130,7 @@ RepairState aiUpdateRepair_handleEvents(STRUCTURE &station, RepairEvents ev, DRO
 	REPAIR_FACILITY	*psRepairFac = &station.pFunctionality->repairFacility;
 	const STRUCTURE *psStructure = &station;
 	//don't do anything if the resistance is low in multiplayer
-	if (bMultiPlayer && psStructure->resistance < (int)structureResistance(psStructure->pStructureType, psStructure->player))
+	if (!isCampaignGame() && psStructure->resistance < (int)structureResistance(psStructure->pStructureType, psStructure->player))
 	{
 		objTrace(psStructure->id, "Resistance too low for repair");
 		if (psRepairFac->psObj != nullptr)
@@ -3520,7 +3520,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 			}
 
 			//electronic warfare affects the functionality of some structures in multiPlayer
-			if (bMultiPlayer && psStructure->resistance < (int)structureResistance(psStructure->pStructureType, psStructure->player))
+			if (!isCampaignGame() && psStructure->resistance < (int)structureResistance(psStructure->pStructureType, psStructure->player))
 			{
 				return;
 			}
@@ -3628,7 +3628,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 			}
 
 			//electronic warfare affects the functionality of some structures in multiPlayer
-			if (bMultiPlayer && psStructure->resistance < (int)structureResistance(psStructure->pStructureType, psStructure->player))
+			if (!isCampaignGame() && psStructure->resistance < (int)structureResistance(psStructure->pStructureType, psStructure->player))
 			{
 				return;
 			}
@@ -4093,7 +4093,7 @@ void structureUpdate(STRUCTURE *psBuilding, GameWorld& world)
 			psBuilding->resistance++;
 
 			//in multiplayer, certain structures do not function whilst low resistance
-			if (bMultiPlayer)
+			if (!isCampaignGame())
 			{
 				resetResistanceLag(psBuilding);
 			}
@@ -4127,7 +4127,7 @@ void structureUpdate(STRUCTURE *psBuilding, GameWorld& world)
 
 			//add the blue flashing effect for multiPlayer
 			const iIMDShape *pDisplayModel = psBuilding->sDisplay.imd ? psBuilding->sDisplay.imd->displayModel() : nullptr;
-			if (bMultiPlayer && ONEINTEN && !bMission && pDisplayModel && pDisplayModel->points.size() >= 2)
+			if (!isCampaignGame() && ONEINTEN && !bMission && pDisplayModel && pDisplayModel->points.size() >= 2)
 			{
 				Vector3i position;
 				const Vector3f *point;
@@ -5835,7 +5835,7 @@ bool validTemplateForFactory(const DROID_TEMPLATE *psTemplate, STRUCTURE *psFact
 
 	//not in multiPlayer! - AB 26/5/99
 	//ignore Transporter Droids
-	if (!bMultiPlayer && isTransporter(psTemplate))
+	if (isCampaignGame() && isTransporter(psTemplate))
 	{
 		debug(level, "Cannot build transporter in campaign.");
 		return false;
@@ -5956,7 +5956,7 @@ bool electronicDamage(BASE_OBJECT *psTarget, BASE_OBJECT *psAttacker, UDWORD dam
 		psDroid->lastHitWeapon = WSC_ELECTRONIC;
 
 		//in multiPlayer cannot attack a Transporter with EW
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			ASSERT_OR_RETURN(true, !psDroid->isTransporter(), "Cannot attack a Transporter in multiPlayer");
 		}
@@ -6026,7 +6026,7 @@ bool validStructResistance(const STRUCTURE *psStruct)
 		/*certain structures will only provide rewards in multiplayer so
 		before they can become valid targets their resistance must be at least
 		half the base value*/
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			switch (psStruct->pStructureType->type)
 			{
@@ -6085,7 +6085,7 @@ UDWORD	structureResistance(const STRUCTURE_STATS *psStats, UBYTE player)
 been attacked*/
 bool electronicReward(STRUCTURE *psStructure, UBYTE attackPlayer)
 {
-	if (!bMultiPlayer)
+	if (isCampaignGame())
 	{
 		return false; //campaign should not give rewards (especially to the player)
 	}
@@ -7073,7 +7073,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 	int prevState = intGetResearchState();
 	bool reward = grantReward && electronicReward(psStructure, attackPlayer);
 
-	if (bMultiPlayer)
+	if (!isCampaignGame())
 	{
 		//certain structures give specific results - the rest swap sides!
 		if (!electronic_warfare || !reward)
@@ -7204,7 +7204,7 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 			checkPlayerBuiltHQ(psNewStruct);
 		}
 
-		if (!bMultiPlayer)
+		if (isCampaignGame())
 		{
 			if (originalPlayer == selectedPlayer)
 			{
@@ -7244,7 +7244,7 @@ UDWORD structPowerToBuildOrAddNextModule(const STRUCTURE *psStruct)
 //this adjusts the time the relevant action started if the building is attacked by EW weapon
 void resetResistanceLag(STRUCTURE *psBuilding)
 {
-	if (bMultiPlayer)
+	if (!isCampaignGame())
 	{
 		switch (psBuilding->pStructureType->type)
 		{
@@ -7277,7 +7277,7 @@ void resetResistanceLag(STRUCTURE *psBuilding)
 selected - returns true if valid*/
 bool lasSatStructSelected(const STRUCTURE *psStruct)
 {
-	if ((psStruct->selected || (bMultiPlayer && !isHumanPlayer(psStruct->player)))
+	if ((psStruct->selected || (!isCampaignGame() && !isHumanGamePlayer(psStruct->player)))
 	    && psStruct->asWeaps[0].nStat
 	    && (psStruct->getWeaponStats(0)->weaponSubClass == WSC_LAS_SAT))
 	{

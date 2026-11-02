@@ -143,7 +143,7 @@ wzapi::scripting_instance::~scripting_instance()
 bool wzapi::scripting_instance::isHostAI() const
 {
 	ASSERT_OR_RETURN(false, m_player >= 0 && m_player < NetPlay.players.size(), "Invalid player: %d", m_player);
-	return NetPlay.isHost && myResponsibility(m_player) && !isHumanPlayer(m_player) && (NetPlay.players[m_player].ai >= 0 || m_player == scavengerPlayer());
+	return NetPlay.isHost && myResponsibility(m_player) && !isHumanGamePlayer(m_player) && (NetPlay.players[m_player].ai >= 0 || m_player == scavengerPlayer());
 }
 
 // Loads a file.
@@ -391,7 +391,7 @@ bool wzapi::setAlliance(WZAPI_PARAMS(int player1, int player2, bool areAllies))
 		}
 		else if (!allianceInvolvesSpectator(player1, player2))
 		{
-			formAlliance(player1, player2, false, bMultiPlayer, true);
+			formAlliance(player1, player2, false, !isCampaignGame(), true);
 		}
 		else
 		{
@@ -789,7 +789,7 @@ bool wzapi::useSafetyTransport(WZAPI_PARAMS(bool flag))
 //--
 bool wzapi::restoreLimboMissionData(WZAPI_NO_PARAMS)
 {
-	if (bMultiPlayer)
+	if (!isCampaignGame())
 	{
 		debug(LOG_ERROR, "restoreLimboMissionData() is not available in multiplayer");
 		return false;
@@ -1636,7 +1636,7 @@ bool wzapi::orderDroidLoc(WZAPI_PARAMS(DROID *psDroid, int order_, int x, int y)
 	SCRIPT_ASSERT(false, context, psDroid, "No valid droid provided");
 	DROID_ORDER order = (DROID_ORDER)order_;
 	SCRIPT_ASSERT(false, context, validOrderForLoc(order), "Invalid location based order: %s", getDroidOrderName(order));
-	if (bMultiPlayer && (order == DORDER_TRANSPORTOUT || order == DORDER_TRANSPORTIN || order == DORDER_TRANSPORTRETURN))
+	if (!isCampaignGame() && (order == DORDER_TRANSPORTOUT || order == DORDER_TRANSPORTIN || order == DORDER_TRANSPORTRETURN))
 	{
 		debug(LOG_ERROR, "%s is not available in multiplayer; use DORDER_DISEMBARK", getDroidOrderName(order));
 		return false;
@@ -2728,7 +2728,7 @@ bool wzapi::gameOverMessage(WZAPI_PARAMS(bool gameWon, optional<bool> _showBackD
 	if (gameWon)
 	{
 		//Quick hack to stop assert when trying to play outro in campaign.
-		psViewData = !bMultiPlayer && showOutro ? getViewData("END") : getViewData("WIN");
+		psViewData = isCampaignGame() && showOutro ? getViewData("END") : getViewData("WIN");
 		addConsoleMessage(_("YOU ARE VICTORIOUS!"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 	}
 	else
@@ -2745,7 +2745,7 @@ bool wzapi::gameOverMessage(WZAPI_PARAMS(bool gameWon, optional<bool> _showBackD
 	{
 		psMessage = addMessage(msgType, false, player);
 	}
-	if (!bMultiPlayer && psMessage)
+	if (isCampaignGame() && psMessage)
 	{
 		//we need to set this here so the VIDEO_QUIT callback is not called
 		setScriptWinLoseVideo(gameWon ? PLAY_WIN : PLAY_LOSE);
@@ -3505,7 +3505,7 @@ int wzapi::countDroid(WZAPI_PARAMS(optional<int> _droidType, optional<int> _play
 //--
 wzapi::no_return_value wzapi::loadLevel(WZAPI_PARAMS(std::string levelName))
 {
-	SCRIPT_ASSERT({}, context, !bMultiPlayer, "loadLevel() is not available in multiplayer");
+	SCRIPT_ASSERT({}, context, isCampaignGame(), "loadLevel() is not available in multiplayer");
 	// Find the level dataset
 	LEVEL_DATASET *psNewLevel = levFindDataSet(levelName.c_str());
 	SCRIPT_ASSERT({}, context, psNewLevel, "Could not find level data for %s", levelName.c_str());
@@ -3630,7 +3630,7 @@ wzapi::no_return_value wzapi::setNoGoArea(WZAPI_PARAMS(int x1, int y1, int x2, i
 	if (playerFilter == ALL_PLAYERS)
 	{
 		::setNoGoArea(x1, y1, x2, y2, LIMBO_LANDING);
-		if (!bMultiPlayer)
+		if (isCampaignGame())
 		{
 			placeLimboDroids();	// this calls the Droids from the Limbo list onto the map
 		}
@@ -4140,7 +4140,7 @@ bool wzapi::setUpgradeStats(WZAPI_BASE_PARAMS(int player, const std::string& nam
 			const unsigned newHitpoints = static_cast<unsigned>(value);
 			auto rescaleBody = [&](STRUCTURE *psCurr)
 			{
-				if (psStats == psCurr->pStructureType && previousHitpoints > 0 && (!bMultiPlayer || previousHitpoints < newHitpoints))
+				if (psStats == psCurr->pStructureType && previousHitpoints > 0 && (isCampaignGame() || previousHitpoints < newHitpoints))
 				{
 					psCurr->body = static_cast<UDWORD>(static_cast<uint64_t>(psCurr->body) * newHitpoints / previousHitpoints);
 				}

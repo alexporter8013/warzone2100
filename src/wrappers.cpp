@@ -494,7 +494,7 @@ bool displayGameOver(bool bDidit, bool showBackDrop)
 	{
 		setPlayerHasWon(true);
 		multiplayerWinSequence(true);
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			updateMultiStatsWins();
 		}
@@ -502,13 +502,13 @@ bool displayGameOver(bool bDidit, bool showBackDrop)
 	else
 	{
 		setPlayerHasLost(true);
-		if (bMultiPlayer && isFirstCallForThisGame) // make sure we only accumulate one loss (even if this is called more than once, for example when losing initially, and then when the game fully ends)
+		if (!isCampaignGame() && isFirstCallForThisGame) // make sure we only accumulate one loss (even if this is called more than once, for example when losing initially, and then when the game fully ends)
 		{
 			updateMultiStatsLoses();
 		}
 	}
 	// Replay viewers have no profile stats to save
-	if (bMultiPlayer && isFirstCallForThisGame && !NETisReplay() && selectedPlayer < MAX_CONNECTED_PLAYERS)
+	if (!isCampaignGame() && isFirstCallForThisGame && !NETisReplay() && selectedPlayer < MAX_CONNECTED_PLAYERS)
 	{
 		updateMultiStatsGames(); // update games played.
 

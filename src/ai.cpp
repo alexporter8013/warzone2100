@@ -685,7 +685,7 @@ int aiBestNearestTarget(DROID *psDroid, BASE_OBJECT **ppsObj, int weapon_slot, i
 			if (targetInQuestion->type == OBJ_DROID)
 			{
 				// in multiPlayer - don't attack Transporters with EW
-				if (bMultiPlayer)
+				if (!isCampaignGame())
 				{
 					// if not electronic then valid target
 					if (!electronic
@@ -718,8 +718,8 @@ int aiBestNearestTarget(DROID *psDroid, BASE_OBJECT **ppsObj, int weapon_slot, i
 					// structure with weapons - go for this
 					psTarget = targetInQuestion;
 				}
-				else if ((isHumanPlayer(psDroid->player) && (psStruct->pStructureType->type != REF_WALL && psStruct->pStructureType->type != REF_WALLCORNER))
-					|| !isHumanPlayer(psDroid->player))
+				else if ((isHumanGamePlayer(psDroid->player) && (psStruct->pStructureType->type != REF_WALL && psStruct->pStructureType->type != REF_WALLCORNER))
+					|| !isHumanGamePlayer(psDroid->player))
 				{
 					psTarget = targetInQuestion;
 				}
@@ -1214,7 +1214,7 @@ void aiUpdateDroid(DROID *psDroid)
 		updateTarget = false;
 	}
 
-	if (bMultiPlayer && psDroid->isVtol() && isHumanPlayer(psDroid->player))
+	if (!isCampaignGame() && psDroid->isVtol() && isHumanGamePlayer(psDroid->player))
 	{
 		lookForTarget = false;
 		updateTarget = false;

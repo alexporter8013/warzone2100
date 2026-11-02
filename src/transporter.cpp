@@ -300,7 +300,7 @@ bool intAddTransporterContents()
 	{
 		return false;
 	}
-	if (bMultiPlayer)
+	if (!isCampaignGame())
 	{
 		//add the capacity label
 		W_LABINIT sLabInit;
@@ -358,7 +358,7 @@ bool intAddTransporterLaunch(DROID *psDroid)
 {
 	UDWORD          capacity;
 
-	if (bMultiPlayer)
+	if (!isCampaignGame())
 	{
 		return true;
 	}
@@ -959,7 +959,7 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 	else
 	{
 		Vector2i droidPos;
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			//set the units next to the transporter's current location
 			droidPos = map_coord(psTransport->pos.xy());
@@ -1072,7 +1072,7 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	/* check for space */
 	if (!checkTransporterSpace(psTransporter, psDroidToAdd))
 	{
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			// search for the nearest transporter if the current one is already full
 			for (auto psOtherDroid : gameWorld.objects.droids[psTransporter->player])
@@ -1183,7 +1183,7 @@ int transporterSpaceRequired(const DROID *psDroid)
 {
 	// all droids are the same weight for campaign games.
 	// TODO - move this into a droid flag
-	return bMultiPlayer ? psDroid->getBodyStats()->size + 1 : 1;
+	return !isCampaignGame() ? psDroid->getBodyStats()->size + 1 : 1;
 }
 
 /*sets which list of droids to use for the transporter interface*/
@@ -1471,11 +1471,11 @@ bool transporterFlying(const DROID *psTransporter)
 	       psTransporter->order.type == DORDER_TRANSPORTIN ||
 	       psTransporter->order.type == DORDER_TRANSPORTRETURN ||
 	       //in multiPlayer mode the Transporter can be moved around
-	       (bMultiPlayer && psTransporter->order.type == DORDER_MOVE) ||
+	       (!isCampaignGame() && psTransporter->order.type == DORDER_MOVE) ||
 	       //in multiPlayer mode the Transporter can be moved and emptied!
-	       (bMultiPlayer && psTransporter->order.type == DORDER_DISEMBARK) ||
+	       (!isCampaignGame() && psTransporter->order.type == DORDER_DISEMBARK) ||
 	       //in multiPlayer, descending still counts as flying
-	       (bMultiPlayer && psTransporter->order.type == DORDER_NONE &&
+	       (!isCampaignGame() && psTransporter->order.type == DORDER_NONE &&
 	        psTransporter->sMove.iVertSpeed != 0);
 }
 

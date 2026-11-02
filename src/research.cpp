@@ -864,7 +864,7 @@ bool researchAvailable(int inc, UDWORD playerID, QUEUE_MODE mode)
 	}
 
 	// if single player mode and key topic, then ignore cos can't do it!
-	if (!bMultiPlayer && asResearch[inc].keyTopic)
+	if (isCampaignGame() && asResearch[inc].keyTopic)
 	{
 		return false;
 	}

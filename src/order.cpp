@@ -473,7 +473,7 @@ bool orderUpdateDroid(DROID *psDroid)
 		{
 			orderDroidObj(psDroid, DORDER_GUARD, psDroid->psGroup->psCommander, ModeImmediate);
 		}
-		else if (psDroid->isTransporter() && !bMultiPlayer)
+		else if (psDroid->isTransporter() && isCampaignGame())
 		{
 
 		}
@@ -983,7 +983,7 @@ bool orderUpdateDroid(DROID *psDroid)
 		break;
 	case DORDER_DISEMBARK:
 		//only valid in multiPlayer mode
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			//this order can only be given to Transporter droids
 			if (psDroid->isTransporter())
@@ -1453,7 +1453,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	    && (validOrderForLoc(psOrder->type) || psOrder->type == DORDER_BUILD)
 	    && !fpathCheck(gameWorld.map, psDroid->pos, rPos, psPropStats->propulsionType))
 	{
-		if (!isHumanPlayer(psDroid->player))
+		if (!isHumanGamePlayer(psDroid->player))
 		{
 			debug(LOG_SCRIPT, "Invalid order %s given to player %d's %s for position (%d, %d) - ignoring",
 			      getDroidOrderName(psOrder->type), psDroid->player, droidGetName(psDroid), psOrder->pos.x, psOrder->pos.y);
@@ -1511,7 +1511,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	// Campaign transporter selection is required for it to be tracked by the camera, and
 	// should be the only case when it does get selected.
 	if (psDroid->isTransporter() &&
-		!bMultiPlayer &&
+		isCampaignGame() &&
 		psDroid->selected &&
 		(psOrder->type != DORDER_TRANSPORTOUT &&
 		psOrder->type != DORDER_TRANSPORTIN &&
@@ -1776,7 +1776,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 				psDroid->order = *psOrder;
 				actionDroid(psDroid, DACTION_MOVE, iDX, iDY);
 			}
-			else if (bMultiPlayer && (startPos.x != 0 && startPos.y != 0) && CheckInScrollLimits(gameWorld.map, startPos.x, startPos.y))
+			else if (!isCampaignGame() && (startPos.x != 0 && startPos.y != 0) && CheckInScrollLimits(gameWorld.map, startPos.x, startPos.y))
 			{
 				psDroid->order = *psOrder;
 				actionDroid(psDroid, DACTION_MOVE, startPos.x, startPos.y);
@@ -1879,7 +1879,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 			else
 			{
 				// no repair facility or HQ go to the landing zone
-				if (!bMultiPlayer && selectedPlayer == 0)
+				if (isCampaignGame() && selectedPlayer == 0)
 				{
 					objTrace(psDroid->id, "could not RTR, doing RTL instead");
 					orderDroid(psDroid, DORDER_RTB, ModeImmediate);
@@ -1905,7 +1905,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		}
 	case DORDER_DISEMBARK:
 		//only valid in multiPlayer mode
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			//this order can only be given to Transporter droids
 			if (psDroid->isTransporter())
@@ -2756,7 +2756,7 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 	if (psDroid->isTransporter())
 	{
 		//in multiPlayer, need to be able to get Transporter repaired
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			if (aiCheckAlliances(psObj->player, psDroid->player) &&
 			    psObj->type == OBJ_STRUCTURE)
@@ -2893,7 +2893,7 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 			}
 
 			//Re-written to allow demolish order to be added to the queuing system
-			bool ObjDepartedAlly = (bMultiPlayer && NetPlay.players[psObj->player].difficulty == AIDifficulty::HUMAN && !NetPlay.players[psObj->player].allocated);
+			bool ObjDepartedAlly = (!isCampaignGame() && NetPlay.players[psObj->player].difficulty == AIDifficulty::HUMAN && !NetPlay.players[psObj->player].allocated);
 			if (intDemolishSelectMode()
 				&& (psObj->player == psDroid->player || ObjDepartedAlly))
 			{

@@ -209,7 +209,7 @@ int droidReloadBar(const BASE_OBJECT *psObj, const WEAPON *psWeap, int weapon_sl
 		{
 			firingStage = gameTime - psWeap->lastFired;
 			interval = bSalvo ? weaponReloadTime(*psStats, psObj->player) : weaponFirePause(*psStats, psObj->player);
-			if (!bSalvo && !bMultiPlayer && getCamTweakOption_heavilyDamagedPenalty() && objectBelowHealthLevel(const_cast<BASE_OBJECT *>(psObj), HEAVY_DAMAGE_LEVEL))
+			if (!bSalvo && isCampaignGame() && getCamTweakOption_heavilyDamagedPenalty() && objectBelowHealthLevel(const_cast<BASE_OBJECT *>(psObj), HEAVY_DAMAGE_LEVEL))
 			{
 				interval += interval;
 			}
@@ -306,7 +306,7 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 	CHECK_DROID(psDroid);
 
 	// VTOLs (and transporters in MP) on the ground take triple damage
-	if ((psDroid->isVtol() || (psDroid->isTransporter() && bMultiPlayer)) && (psDroid->sMove.Status == MOVEINACTIVE))
+	if ((psDroid->isVtol() || (psDroid->isTransporter() && !isCampaignGame())) && (psDroid->sMove.Status == MOVEINACTIVE))
 	{
 		damage *= 3;
 	}
@@ -1014,7 +1014,7 @@ void droidUpdate(DROID *psDroid)
 		droidUpdateDroidSelfRepair(psDroid);
 	}
 
-	if (bMultiPlayer)
+	if (!isCampaignGame())
 	{
 		droidUpdateShields(psDroid);
 	}
@@ -1886,7 +1886,7 @@ UDWORD calcDroidPower(const DROID *psDroid)
 DROID *reallyBuildDroid(GameWorld& world, const DROID_TEMPLATE *pTemplate, Position pos, UDWORD player, bool onMission, Rotation rot, uint32_t id)
 {
 	// Don't use this assertion in single player, since droids can finish building while on an away mission
-	ASSERT(!bMultiPlayer || worldOnMap(world.map, pos.x, pos.y), "the build locations are not on the map");
+	ASSERT(isCampaignGame() || worldOnMap(world.map, pos.x, pos.y), "the build locations are not on the map");
 
 	ASSERT_OR_RETURN(nullptr, player < MAX_PLAYERS, "Invalid player: %" PRIu32 "", player);
 
@@ -2635,7 +2635,7 @@ bool droidExpForScavengersOutsideLimits(DROID *psDroid)
 // Increase the experience of a droid (and handle events, if needed).
 void droidIncreaseExperience(DROID *psDroid, uint32_t experienceInc)
 {
-	if (!bMultiPlayer)
+	if (isCampaignGame())
 	{
 		if (getCamTweakOption_NoExp())
 		{
@@ -3686,7 +3686,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 
 	// Check unit limits (multiplayer only)
 	syncDebug("Limits: %u/%d %u/%d %u/%d", getNumDroids(to), getMaxDroids(to), getNumConstructorDroids(to), getMaxConstructors(to), getNumCommandDroids(to), getMaxCommanders(to));
-	if (bMultiPlayer
+	if (!isCampaignGame()
 		&& ((int)getNumDroids(to) >= getMaxDroids(to)
 			|| ((psD->droidType == DROID_CYBORG_CONSTRUCT || psD->droidType == DROID_CONSTRUCT)
 				&& (int)getNumConstructorDroids(to) >= getMaxConstructors(to))
@@ -3700,7 +3700,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 	}
 
 	// electronic or campaign will destroy and recreate the droid.
-	if (electronic || !bMultiPlayer)
+	if (electronic || isCampaignGame())
 	{
 		DROID_TEMPLATE sTemplate;
 		DROID *psNewDroid;
@@ -3708,7 +3708,7 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 		templateSetParts(psD, &sTemplate);	// create a template based on the droid
 		sTemplate.name = WzString::fromUtf8(psD->aName);	// copy the name across
 		// update score
-		if (psD->player == selectedPlayer && to != selectedPlayer && !bMultiPlayer)
+		if (psD->player == selectedPlayer && to != selectedPlayer && isCampaignGame())
 		{
 			scoreUpdateVar(WD_UNITS_LOST);
 		}
@@ -3960,7 +3960,7 @@ bool isSelectable(DROID const *psDroid)
 	}
 
 	// we shouldn't ever control the transporter in SP games
-	if (psDroid->isTransporter() && !bMultiPlayer)
+	if (psDroid->isTransporter() && isCampaignGame())
 	{
 		return false;
 	}

@@ -283,7 +283,7 @@ public:
 private:
 	void initialize()
 	{
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			allyResearchIcons.initialize(*this);
 			allyResearchIcons.setTop(10);
@@ -327,7 +327,7 @@ protected:
 	{
 		BaseWidget::updateLayout();
 
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			updateAllyStatus();
 		}
@@ -521,7 +521,7 @@ private:
 	{
 		addCostBar();
 
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			addProgressBar();
 			allyResearchIcons.initialize(*this);
@@ -560,7 +560,7 @@ private:
 
 		updateCostBar(research);
 
-		if (bMultiPlayer)
+		if (!isCampaignGame())
 		{
 			updateAllyStatus(research);
 		}

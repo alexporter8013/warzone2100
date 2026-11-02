@@ -634,7 +634,7 @@ wzapi::scripting_instance* scripting_engine::loadPlayerScript(const WzString& pa
 {
 	ASSERT_OR_RETURN(nullptr, player >= 0 && (player < MAX_PLAYERS || player == selectedPlayer), "Player index %d out of bounds", player);
 
-	if (binding == wzapi::ScriptBinding::PlayerAI && bMultiPlayer && NetPlay.bComms
+	if (binding == wzapi::ScriptBinding::PlayerAI && !isCampaignGame() && NetPlay.bComms
 	    && player >= 0 && static_cast<size_t>(player) < NetPlay.players.size()
 	    && NetPlay.players[player].allocated)
 	{

@@ -264,7 +264,7 @@ static void recvGiftStruct(uint8_t from, uint8_t to, uint32_t structID)
 	if (psStruct)
 	{
 		const STRUCTURE_STATS *psStats = psStruct->pStructureType;
-		if (bMultiPlayer && psStats->curCount[to] >= psStats->upgrade[to].limit)
+		if (!isCampaignGame() && psStats->curCount[to] >= psStats->upgrade[to].limit)
 		{
 			syncDebug("Structure limit reached.");
 			return;
@@ -566,7 +566,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 	}
 
 	// Don't add message if already allied
-	if (bMultiPlayer && alliances[p1][p2] != ALLIANCE_FORMED && allowNotification)
+	if (!isCampaignGame() && alliances[p1][p2] != ALLIANCE_FORMED && allowNotification)
 	{
 		sstrcpy(tm1, getPlayerName(p1));
 		CONPRINTF(_("%s Forms An Alliance With %s"), tm1, getPlayerName(p2));
@@ -576,7 +576,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 	triggerEventAllianceAccepted(p1, p2);
 	alliances[p1][p2] = ALLIANCE_FORMED;
 	alliances[p2][p1] = ALLIANCE_FORMED;
-	if (bMultiPlayer && alliancesSharedVision(game.alliance))	// this is for shared vision only
+	if (!isCampaignGame() && alliancesSharedVision(game.alliance))	// this is for shared vision only
 	{
 		alliancebits[p1] |= 1 << p2;
 		alliancebits[p2] |= 1 << p1;
@@ -588,7 +588,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 	}
 
 	// Not campaign and alliances are transitive
-	if (bMultiPlayer && alliancesSharedVision(game.alliance))
+	if (!isCampaignGame() && alliancesSharedVision(game.alliance))
 	{
 		giftRadar(p1, p2, false);
 		giftRadar(p2, p1, false);

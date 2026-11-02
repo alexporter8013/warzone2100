@@ -370,7 +370,7 @@ bool recvDroid(NETQUEUE queue)
 	else
 	{
 		debug(LOG_ERROR, "Packet from %d cannot create droid for p%d (%s)!", queue.index,
-		      player, isHumanPlayer(player) ? "Human" : "AI");
+		      player, isHumanGamePlayer(player) ? "Human" : "AI");
 #ifdef DEBUG
 		CONPRINTF("MULTIPLAYER: Couldn't build a remote droid, relying on checking to resync");
 #endif
@@ -762,7 +762,7 @@ static bool validDroidInfoOrderForDroid(QueuedDroidInfo const &info, DROID_ORDER
 	{
 		return false;
 	}
-	if ((info.order == DORDER_TRANSPORTOUT || info.order == DORDER_TRANSPORTIN || info.order == DORDER_TRANSPORTRETURN) && bMultiPlayer)
+	if ((info.order == DORDER_TRANSPORTOUT || info.order == DORDER_TRANSPORTIN || info.order == DORDER_TRANSPORTRETURN) && !isCampaignGame())
 	{
 		return false;
 	}
@@ -873,7 +873,7 @@ bool recvDroidInfo(NETQUEUE queue)
 			if (!psDroid)
 			{
 				debug(LOG_NEVER, "Packet from %d refers to non-existent droid %u, [%s : p%d]",
-				      queue.index, info.droidId, isHumanPlayer(info.player) ? "Human" : "AI", info.player);
+				      queue.index, info.droidId, isHumanGamePlayer(info.player) ? "Human" : "AI", info.player);
 				syncDebug("Droid %d missing", info.droidId);
 				continue;  // Can't find the droid, so skip this droid.
 			}

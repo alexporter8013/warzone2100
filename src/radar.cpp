@@ -569,7 +569,7 @@ static void DrawRadarObjects(GameWorld& world)
 				continue;
 			}
 			if (psDroid->visibleForLocalDisplay()
-			    || (bMultiPlayer && alliancesSharedVision(game.alliance)
+			    || (!isCampaignGame() && alliancesSharedVision(game.alliance)
 					&& selectedPlayer < MAX_PLAYERS && aiCheckAlliances(selectedPlayer, psDroid->player)))
 			{
 				int	x = psDroid->pos.x / TILE_UNITS;
@@ -632,7 +632,7 @@ static void DrawRadarObjects(GameWorld& world)
 			flashCol = flashColours[getPlayerColour(clan)];
 
 			if (psStruct->visibleForLocalDisplay()
-			    || (bMultiPlayer && alliancesSharedVision(game.alliance)
+			    || (!isCampaignGame() && alliancesSharedVision(game.alliance)
 			        && selectedPlayer < MAX_PLAYERS && aiCheckAlliances(selectedPlayer, psStruct->player)))
 			{
 				if (clan == selectedPlayer && gameTime > HIT_NOTIFICATION && gameTime - psStruct->timeLastHit < HIT_NOTIFICATION)

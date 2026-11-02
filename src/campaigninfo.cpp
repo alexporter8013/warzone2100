@@ -49,7 +49,7 @@ void setCampaignNumber(uint32_t number)
 	ASSERT(number < 4, "Campaign Number too high!");
 	camNumber = number;
 
-	if (!bMultiPlayer && !bInTutorial)
+	if (isCampaignGame() && !bInTutorial)
 	{
 		if (!campaignName.has_value())
 		{

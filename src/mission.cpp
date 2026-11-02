@@ -1926,7 +1926,7 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 			droidY = map_coord(y);
 			if (!pickATileGen(gameWorld, &droidX, &droidY, LOOK_FOR_EMPTY_TILE, zonedPAT))
 			{
-				if (!bMultiPlayer)
+				if (isCampaignGame())
 				{
 					// try to avoid failing to unload a transporter in campaign mode - stack units on top of each other if needed
 					if (lastDroidX.has_value() && lastDroidY.has_value())
@@ -1960,7 +1960,7 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 			//reset droid orders
 			orderDroid(psDroid, DORDER_STOP, ModeImmediate);
 			psDroid->selected = false;
-			if (!bMultiPlayer)
+			if (isCampaignGame())
 			{
 				// So VTOLs don't try to rearm on another map
 				setDroidBase(psDroid, nullptr);
@@ -1969,7 +1969,7 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 			disembarkedDroids.push_back(psDroid);
 		}
 
-		if (!bMultiPlayer || !disembarkedDroids.empty())
+		if (isCampaignGame() || !disembarkedDroids.empty())
 		{
 			/* trigger script callback detailing group about to disembark */
 			triggerEvent(TRIGGER_TRANSPORTER_LANDED, psTransporter);
@@ -2004,7 +2004,7 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 	}
 
 	// Don't do this in multiPlayer
-	if (!bMultiPlayer)
+	if (isCampaignGame())
 	{
 		// Send all transporter Droids back to home base if off world
 		{
@@ -2573,7 +2573,7 @@ static bool _intAddMissionResult(bool result, bool bPlaySuccess, bool showBackDr
 	// add some funky beats
 	cdAudio_PlayTrack(SONG_FRONTEND);
 
-	if (!bMultiPlayer && result && showBackDrop)
+	if (isCampaignGame() && result && showBackDrop)
 	{
 		if (!screen_GetBackDrop())
 		{

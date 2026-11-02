@@ -695,7 +695,7 @@ bool hasSharedVision(unsigned viewer, unsigned ally)
 	if (viewer >= MAX_PLAYERS) { return false; }
 	ASSERT_OR_RETURN(false, ally < MAX_PLAYERS, "Bad ally %u (viewer: %u)", ally, viewer);
 
-	return viewer == ally || (bMultiPlayer && alliancesSharedVision(game.alliance) && aiCheckAlliances(viewer, ally));
+	return viewer == ally || (!isCampaignGame() && alliancesSharedVision(game.alliance) && aiCheckAlliances(viewer, ally));
 }
 
 static void setSeenBy(BASE_OBJECT *psObj, unsigned viewer, int val /*= UBYTE_MAX*/)

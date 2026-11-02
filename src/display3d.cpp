@@ -1853,7 +1853,7 @@ static bool projectileDrawnAsEffect(const WEAPON_STATS *psStats)
 		|| psStats->weaponSubClass == WSC_COMMAND
 		|| psStats->weaponSubClass == WSC_ELECTRONIC
 		|| psStats->weaponSubClass == WSC_EMP
-		|| (bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT);
+		|| (!isCampaignGame() && psStats->weaponSubClass == WSC_LAS_SAT);
 }
 
 static void pushProjectileLight(LightingData &lightData, const Vector3i &lightPosition, const ProjectileLight &projectileLight)
@@ -1910,7 +1910,7 @@ void	renderProjectile(PROJECTILE *psCurr, const glm::mat4 &viewMatrix, const glm
 	    psStats->weaponSubClass == WSC_COMMAND || // || psStats->weaponSubClass == WSC_ENERGY)
 	    psStats->weaponSubClass == WSC_ELECTRONIC ||
 	    psStats->weaponSubClass == WSC_EMP ||
-	    (bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT))
+	    (!isCampaignGame() && psStats->weaponSubClass == WSC_LAS_SAT))
 	{
 		/* We don't do projectiles from these guys, cos there's an effect instead */
 		return;
@@ -3996,7 +3996,7 @@ void calcScreenCoords(DROID *psDroid, const glm::mat4 &perspectiveViewMatrix)
 		{
 			//don't allow Transporter Droids to be selected here
 			//unless we're in multiPlayer mode!!!!
-			if (!psDroid->isTransporter() || bMultiPlayer)
+			if (!psDroid->isTransporter() || !isCampaignGame())
 			{
 				dealWithDroidSelect(psDroid, true);
 			}

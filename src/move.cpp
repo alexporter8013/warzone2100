@@ -946,7 +946,7 @@ bool moveBlocked(DROID *psDroid)
 		// Stopped long enough - blocked
 		psDroid->sMove.bumpTime = 0;
 		psDroid->sMove.lastBump = 0;
-		if (!isHumanPlayer(psDroid->player) && bMultiPlayer)
+		if (!isHumanGamePlayer(psDroid->player) && !isCampaignGame())
 		{
 			psDroid->lastFrustratedTime = gameTime;
 			objTrace(psDroid->id, "FRUSTRATED");
@@ -958,7 +958,7 @@ bool moveBlocked(DROID *psDroid)
 		// if the unit cannot see the next way point - reroute it's got stuck,
 		// unless it is stuck against the settled crowd at its own destination,
 		// then it parks with the crowd instead
-		if ((bMultiPlayer || psDroid->player == selectedPlayer || psDroid->lastFrustratedTime == gameTime)
+		if ((!isCampaignGame() || psDroid->player == selectedPlayer || psDroid->lastFrustratedTime == gameTime)
 		    && psDroid->sMove.pathIndex != (int)psDroid->sMove.asPath.size()
 		    && !moveSettledPackAtDestination(psDroid))
 		{
@@ -1718,7 +1718,7 @@ SDWORD moveCalcDroidSpeed(DROID *psDroid)
 	// now offset the speed for the slope of the droid
 	pitch = angleDelta(psDroid->rot.pitch);
 	speed = (maxPitch - pitch) * speed / maxPitch;
-	if (!bMultiPlayer && getCamTweakOption_heavilyDamagedPenalty() && objectBelowHealthLevel(psDroid, HEAVY_DAMAGE_LEVEL))
+	if (isCampaignGame() && getCamTweakOption_heavilyDamagedPenalty() && objectBelowHealthLevel(psDroid, HEAVY_DAMAGE_LEVEL))
 	{
 		speed = 2 * speed / 3; // slow down damaged droids.
 	}
@@ -2090,7 +2090,7 @@ static void moveUpdatePersonModel(DROID *psDroid, SDWORD speed, uint16_t directi
 static void moveAdjustVtolHeight(DROID *psDroid, int32_t iMapHeight)
 {
 	int32_t	iMinHeight, iMaxHeight, iLevelHeight;
-	if (psDroid->isTransporter() && !bMultiPlayer)
+	if (psDroid->isTransporter() && isCampaignGame())
 	{
 		iMinHeight   = 2 * VTOL_HEIGHT_MIN;
 		iLevelHeight = 2 * VTOL_HEIGHT_LEVEL;
@@ -2403,7 +2403,7 @@ static bool pickupOilDrum(int toPlayer, int fromPlayer)
 {
 	unsigned int power = OILDRUM_POWER;
 
-	if (!bMultiPlayer && !bInTutorial)
+	if (isCampaignGame() && !bInTutorial)
 	{
 		// Let Beta and Gamma campaign oil drums give a little more power
 		if (getCampaignNumber() == 2)
@@ -2431,7 +2431,7 @@ static bool pickupOilDrum(int toPlayer, int fromPlayer)
 static void checkLocalFeatures(DROID *psDroid)
 {
 	// NOTE: Why not do this for AI units also?
-	if ((!isHumanPlayer(psDroid->player) && psDroid->order.type != DORDER_RECOVER) || psDroid->isVtol() || psDroid->isTransporter())  // VTOLs or transporters can't pick up features!
+	if ((!isHumanGamePlayer(psDroid->player) && psDroid->order.type != DORDER_RECOVER) || psDroid->isVtol() || psDroid->isTransporter())  // VTOLs or transporters can't pick up features!
 	{
 		return;
 	}

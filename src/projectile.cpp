@@ -362,7 +362,7 @@ DROID *getDesignatorAttackingObject(int player, BASE_OBJECT *target)
 
 static bool shouldGiveExpGain(DAMAGE *psDamage, DROID *psDroid)
 {
-	if (bMultiPlayer && psDamage && psDamage->psDest && psDamage->psDest->player == scavengerPlayer())
+	if (!isCampaignGame() && psDamage && psDamage->psDest && psDamage->psDest->player == scavengerPlayer())
 	{
 		return psDroid != nullptr && !droidExpForScavengersOutsideLimits(psDroid);
 	}
@@ -384,7 +384,7 @@ static void proj_UpdateExperience(PROJECTILE *psObj, DAMAGE *psDamage, uint32_t 
 
 		// If it is 'droid-on-droid' then modify the experience by the Quality factor
 		// Only do this in MP so to not un-balance the campaign
-		if (psObj->psDest != nullptr && psObj->psDest->type == OBJ_DROID && bMultiPlayer)
+		if (psObj->psDest != nullptr && psObj->psDest->type == OBJ_DROID && !isCampaignGame())
 		{
 			// Modify the experience gained by the 'quality factor' of the units
 			experienceInc = (uint64_t)experienceInc * qualityFactor(psDroid, (DROID *)psObj->psDest) / 65536;
@@ -670,7 +670,7 @@ static PROJECTILE* proj_SendProjectileAngledInternal(WEAPON* psWeap, SIMPLE_OBJE
 				}
 			}
 			//don't play the sound for a LasSat in multiPlayer
-			else if (!(bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT))
+			else if (!(!isCampaignGame() && psStats->weaponSubClass == WSC_LAS_SAT))
 			{
 				audio_PlayObjStaticTrack(&stableProj, psStats->iAudioFireID);
 			}
@@ -853,7 +853,7 @@ static PROJECTILE* proj_InFlightFunc(PROJECTILE *psProj)
 
 	/* we want a delay between Las-Sats firing and actually hitting in multiPlayer
 	magic number but that's how long the audio countdown message lasts! */
-	if (bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT &&
+	if (!isCampaignGame() && psStats->weaponSubClass == WSC_LAS_SAT &&
 	    (unsigned)timeSoFar < LAS_SAT_DELAY * GAME_TICKS_PER_SEC)
 	{
 		return nullptr;

@@ -284,7 +284,7 @@ bool loadTemplateCommon(const nlohmann::json& obj, DROID_TEMPLATE &outputTemplat
 // A way to check if a design is something someone could legitimately have in multiplayer
 bool designableTemplate(const DROID_TEMPLATE *psTempl, int player, bool quiet)
 {
-	if (!bMultiPlayer || !isHumanPlayer(player))
+	if (isCampaignGame() || !isHumanGamePlayer(player))
 	{
 		return true; // Don't care about AIs
 	}
@@ -1043,7 +1043,7 @@ std::vector<DROID_TEMPLATE *> fillTemplateList(STRUCTURE *psFactory)
 		{
 			if (!psCurr->enabled
 				|| psCurr->hidden
-				|| (bMultiPlayer && !playerBuiltHQ && (psCurr->droidType != DROID_CONSTRUCT && psCurr->droidType != DROID_CYBORG_CONSTRUCT))
+				|| (!isCampaignGame() && !playerBuiltHQ && (psCurr->droidType != DROID_CONSTRUCT && psCurr->droidType != DROID_CYBORG_CONSTRUCT))
 				|| !validTemplateForFactory(psCurr, psFactory, false)
 				|| !researchedTemplate(psCurr, player, includeRedundantDesigns))
 			{
@@ -1056,7 +1056,7 @@ std::vector<DROID_TEMPLATE *> fillTemplateList(STRUCTURE *psFactory)
 		{
 			pList.push_back(psCurr);
 		}
-		else if (bMultiPlayer && (iCapacity == SIZE_HEAVY))
+		else if (!isCampaignGame() && (iCapacity == SIZE_HEAVY))
 		{
 			// Special case for Super heavy bodyies (Super Transporter)
 			if (psCurr->getBodyStats()->size == SIZE_SUPER_HEAVY)

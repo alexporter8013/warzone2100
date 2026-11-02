@@ -887,7 +887,7 @@ void videoLoop()
 				intResetScreen(true);
 				setMessageImmediate(false);
 			}
-			if (!bMultiPlayer && getScriptWinLoseVideo())
+			if (isCampaignGame() && getScriptWinLoseVideo())
 			{
 				displayGameOver(getScriptWinLoseVideo() == PLAY_WIN, false);
 			}

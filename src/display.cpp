@@ -877,7 +877,7 @@ void processMouseClickInput()
 		}
 		else
 		{
-			if (!bMultiPlayer && establishSelection(selectedPlayer) == SC_DROID_SUPERTRANSPORTER)
+			if (isCampaignGame() && establishSelection(selectedPlayer) == SC_DROID_SUPERTRANSPORTER)
 			{
 				// Never, *ever* let user control the transport in SP games--it breaks the scripts!
 				ASSERT(game.type == LEVEL_TYPE::CAMPAIGN, "Game type was set incorrectly!");
@@ -965,7 +965,7 @@ void processMouseClickInput()
 
 		ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer is too high: %" PRIu32 "", selectedPlayer);
 		ObjAllied = (ObjUnderMouse && selectedPlayer != ObjUnderMouse->player && aiCheckAlliances(selectedPlayer, ObjUnderMouse->player));
-		bool ObjDepartedAlly = (ObjUnderMouse && bMultiPlayer && NetPlay.players[ObjUnderMouse->player].difficulty == AIDifficulty::HUMAN && !NetPlay.players[ObjUnderMouse->player].allocated);
+		bool ObjDepartedAlly = (ObjUnderMouse && !isCampaignGame() && NetPlay.players[ObjUnderMouse->player].difficulty == AIDifficulty::HUMAN && !NetPlay.players[ObjUnderMouse->player].allocated);
 
 		if (item != MT_NOTARGET)
 		{
@@ -1015,7 +1015,7 @@ void processMouseClickInput()
 				}
 			}
 			// in multiPlayer check for what kind of unit can use it (TODO)
-			else if (bMultiPlayer && item == MT_TRANDROID)
+			else if (!isCampaignGame() && item == MT_TRANDROID)
 			{
 				if (ObjUnderMouse->player != selectedPlayer)
 				{
@@ -1117,7 +1117,7 @@ void processMouseClickInput()
 			}
 
 			if (specialOrderKeyDown() && (selection == SC_DROID_TRANSPORTER || selection == SC_DROID_SUPERTRANSPORTER) &&
-			    arnMPointers[item][selection] == CURSOR_MOVE && bMultiPlayer)
+			    arnMPointers[item][selection] == CURSOR_MOVE && !isCampaignGame())
 			{
 				// Alt+move = disembark transporter
 				wzSetCursor(CURSOR_DISEMBARK);
@@ -1151,7 +1151,7 @@ void processMouseClickInput()
 		item = itemUnderMouse(&ObjUnderMouse);
 
 		//exceptions, exceptions...AB 10/06/99
-		if (bMultiPlayer && bLasSatStruct)
+		if (!isCampaignGame() && bLasSatStruct)
 		{
 			ASSERT(item < POSSIBLE_TARGETS, "Weirdy target!");
 			if (item == MT_ENEMYDROID || item == MT_ENEMYSTR || item == MT_DAMFEATURE)
@@ -1971,7 +1971,7 @@ static void dealWithLMBDroid(DROID *psDroid, SELECTION_TYPE selection)
 		orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psDroid, ctrlShiftDown());
 
 		//lasSat structure can select a target - in multiPlayer only
-		if (bMultiPlayer && bLasSatStruct)
+		if (!isCampaignGame() && bLasSatStruct)
 		{
 			orderStructureObj(selectedPlayer, (BASE_OBJECT *)psDroid);
 		}
@@ -1999,7 +1999,7 @@ static void dealWithLMBDroid(DROID *psDroid, SELECTION_TYPE selection)
 		if (selection == SC_INVALID)
 		{
 			//in multiPlayer mode we RMB to get the interface up
-			if (bMultiPlayer && !bEffectiveRightClickOrders)
+			if (!isCampaignGame() && !bEffectiveRightClickOrders)
 			{
 				psDroid->selected = true;
 				triggerEventSelected();
@@ -2133,7 +2133,7 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 		}
 		orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psStructure, ctrlShiftDown());
 		//lasSat structure can select a target - in multiPlayer only
-		if (bMultiPlayer && bLasSatStruct)
+		if (!isCampaignGame() && bLasSatStruct)
 		{
 			orderStructureObj(selectedPlayer, (BASE_OBJECT *)psStructure);
 		}
@@ -2239,7 +2239,7 @@ static void dealWithLMBFeature(FEATURE *psFeature)
 	{
 		orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psFeature, ctrlShiftDown());
 		//lasSat structure can select a target - in multiPlayer only
-		if (bMultiPlayer && bLasSatStruct)
+		if (!isCampaignGame() && bLasSatStruct)
 		{
 			orderStructureObj(selectedPlayer, (BASE_OBJECT *)psFeature);
 		}
@@ -2551,7 +2551,7 @@ static void dealWithRMB()
 				// Transporter
 				else
 				{
-					if (bMultiPlayer)
+					if (!isCampaignGame())
 					{
 						if (bEffectiveRightClickOrders && !(psDroid->selected))
 						{
@@ -2570,7 +2570,7 @@ static void dealWithRMB()
 					}
 				}
 			}
-			else if (bMultiPlayer && isHumanPlayer(psDroid->player))
+			else if (!isCampaignGame() && isHumanGamePlayer(psDroid->player))
 			{
 				console("%s", droidGetName(psDroid));
 				FeedbackOrderGiven();

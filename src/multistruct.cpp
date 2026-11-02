@@ -261,7 +261,7 @@ bool recvLasSat(NETQUEUE queue)
 			firePause += firePause;
 		}
 
-		if (isHumanPlayer(player) && gameTime - psStruct->asWeaps[0].lastFired <= firePause)
+		if (isHumanGamePlayer(player) && gameTime - psStruct->asWeaps[0].lastFired <= firePause)
 		{
 			/* Too soon to fire again */
 			return true ^ false;  // Return value meaningless and ignored.
@@ -411,7 +411,7 @@ void recvStructureInfo(NETQUEUE queue)
 		}
 		if (!researchedTemplate(pT, player, true, false)
 			|| !intValidTemplate(pT, nullptr, false, player)
-			|| !(validTemplateForFactory(pT, psStruct, false) || player == scavengerPlayer() || !bMultiPlayer))
+			|| !(validTemplateForFactory(pT, psStruct, false) || player == scavengerPlayer() || isCampaignGame()))
 		{
 			if (recordInvalidMessage(queue.index, GAME_STRUCTUREINFO))
 			{

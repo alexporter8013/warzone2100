@@ -44,7 +44,7 @@ static int fDifEnemyModifier;
 void setDamageModifiers(int playerModifier, int enemyModifier)
 {
 	fDifPlayerModifier = std::max(1, playerModifier);
-	fDifEnemyModifier = std::max(1, (!bMultiPlayer && getCamTweakOption_PS1Modifiers()) ? enemyModifier / 3 : enemyModifier);
+	fDifEnemyModifier = std::max(1, (isCampaignGame() && getCamTweakOption_PS1Modifiers()) ? enemyModifier / 3 : enemyModifier);
 }
 
 // ------------------------------------------------------------------------------------
@@ -95,7 +95,7 @@ int modifyForDifficultyLevel(int basicVal, bool IsPlayer)
 // prevent campaign difficulty from influencing skirmish and multiplayer games
 void resetDamageModifiers()
 {
-	if (bMultiPlayer)
+	if (!isCampaignGame())
 	{
 		setDamageModifiers(100, 100);
 	}

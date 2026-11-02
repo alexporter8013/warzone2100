@@ -5014,7 +5014,7 @@ static void readSimMisc(const nlohmann::ordered_json &j, uint32_t version)
 	// The off-world reinforcement transporter mode does not exist in multiplayer - enforce the invariant
 	// on restore so a malformed or campaign-authored snapshot can never leave it set in an MP session.
 	bool onMission = j.value("transporterOnMission", false);
-	if (bMultiPlayer)
+	if (!isCampaignGame())
 	{
 		onMission = false;
 	}

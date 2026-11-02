@@ -362,7 +362,7 @@ void GameStoryLogger::logStartGame()
 {
 	reset();
 
-	if (!bMultiPlayer)
+	if (isCampaignGame())
 	{
 		// skip for campaign, for now
 		return;
@@ -424,7 +424,7 @@ void GameStoryLogger::setFrameLoggingInterval(uint32_t seconds)
 
 void GameStoryLogger::logGameFrame()
 {
-	if (!bMultiPlayer)
+	if (isCampaignGame())
 	{
 		// skip for campaign, for now
 		return;
@@ -450,7 +450,7 @@ void GameStoryLogger::logGameFrame()
 
 void GameStoryLogger::logResearchCompleted(RESEARCH *psResearch, STRUCTURE *psStruct, int player)
 {
-	if (!bMultiPlayer)
+	if (isCampaignGame())
 	{
 		// skip for campaign, for now
 		return;
@@ -485,7 +485,7 @@ void GameStoryLogger::logDebugModeChange(bool enabled)
 
 void GameStoryLogger::logGameOver()
 {
-	if (!bMultiPlayer)
+	if (isCampaignGame())
 	{
 		// skip for campaign, for now
 		return;
