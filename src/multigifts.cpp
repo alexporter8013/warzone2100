@@ -505,7 +505,9 @@ void breakAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio)
 		return;  // Wait for our message.
 	}
 
-	if (alliances[p1][p2] == ALLIANCE_FORMED)
+	// campaign scripts form their alliances silently, and break them when the mission is won: that isn't news in a co-op
+	// campaign, where the player names are connection slots' names rather than the factions'
+	if (alliances[p1][p2] == ALLIANCE_FORMED && !isCoopGame())
 	{
 		sstrcpy(tm1, getPlayerName(p1));
 		CONPRINTF(_("%s Breaks The Alliance With %s"), tm1, getPlayerName(p2));

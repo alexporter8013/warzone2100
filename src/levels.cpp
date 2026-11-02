@@ -1349,7 +1349,7 @@ static LoadingTask<> levFinalizeLevelLoad(ResourceLoadingController& controller,
 {
 	LEVEL_DATASET *psNewLevel = ctx.psNewLevel;
 
-	if (bMultiPlayer)
+	if (bMultiPlayer && game.type != LEVEL_TYPE::CAMPAIGN) // co-op campaigns use the campaign's own messages and scripts
 	{
 		// This calls resLoadFile("SMSG", "multiplay.txt"). Must be before loadMissionExtras, which calls loadSaveMessage, which calls getViewData.
 		loadMultiScripts();

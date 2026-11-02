@@ -4460,7 +4460,7 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 			{
 				// Don't allow building structures (allow delivery points, though) outside visible area in single-player with debug mode off. (Why..?)
 				const DebugInputManager& dbgInputManager = gInputManager.debugManager();
-				if (!bMultiPlayer && !dbgInputManager.debugMappingsAllowed() && !TEST_TILE_VISIBLE(player, mapTile(world.map, b.map.x + i, b.map.y + j)))
+				if (isCampaignGame() && (isNetworkedGame() || !dbgInputManager.debugMappingsAllowed()) && !TEST_TILE_VISIBLE(player, mapTile(world.map, b.map.x + i, b.map.y + j)))
 				{
 					return false;
 				}
@@ -4992,7 +4992,8 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 		}
 	}
 
-	if (bMultiPlayer)
+	// Campaign scripts place their own artifacts (camSetArtifacts), so a second drop here would collide with theirs
+	if (bMultiPlayer && !isCampaignGame())
 	{
 		technologyGiveAway(psDel);  // Drop an artifact, if applicable.
 	}

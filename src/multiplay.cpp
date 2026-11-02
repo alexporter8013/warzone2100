@@ -1924,7 +1924,9 @@ static bool recvResearch(NETQUEUE queue)
 	}
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
-	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer)
+	// Co-op campaign scripts (artifacts, tech grants) complete research through this message; the host is the only sender
+	const bool isCoopScriptGrant = isCoopGame() && queue.index == NetPlay.hostPlayer && player < MAX_PLAYERS;
+	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer && !isCoopScriptGrant)
 	{
 		debug(LOG_WARNING, "Failed to finish research for player %u.", NetPlay.players[queue.index].position);
 		return false;

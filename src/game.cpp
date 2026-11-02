@@ -5280,7 +5280,7 @@ static bool writeGameFile(const char *fileName, SDWORD saveType)
 	//version 38
 	sstrcpy(saveGame.modList, getModList().c_str());
 	// Attempt to see if we have a corrupted game structure in campaigns.
-	if (saveGame.sGame.type == LEVEL_TYPE::CAMPAIGN)
+	if (saveGame.sGame.type == LEVEL_TYPE::CAMPAIGN && !isCoopGame()) // (a co-op campaign has a human in each controller's slot)
 	{
 		// player 0 is always a human in campaign games
 		for (i = 1; i < MAX_PLAYERS; i++)

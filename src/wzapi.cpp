@@ -364,6 +364,11 @@ static bool isGlobalScript(const wzapi::execution_context &context)
 // Global scripts run on every client, so only the client responsible for the player sends a game message for it
 static bool scriptSendsFor(const wzapi::execution_context &context, int player)
 {
+	if (isCoopGame())
+	{
+		// every co-op client runs the shared player's scripts, so exactly one of them (the host) may send
+		return !isGlobalScript(context) || NetPlay.isHost;
+	}
 	return !bMultiPlayer || !isGlobalScript(context) || myResponsibility(player);
 }
 

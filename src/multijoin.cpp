@@ -117,6 +117,11 @@ void clearPlayer(GameWorld& world, UDWORD player, bool quietly)
 		return; // no more to do
 	}
 
+	if (isCoopGame())
+	{
+		return; // the slot number is also the number of an enemy faction, which isn't the slot's to destroy
+	}
+
 	destroyPlayerResources(world, player, quietly);
 }
 
@@ -434,6 +439,13 @@ void handlePlayerLeftInGame(UDWORD player)
 	if (player >= MAX_PLAYERS)
 	{
 		return; // no more to do
+	}
+
+	if (isCoopGame())
+	{
+		// A controller slot leaving doesn't take a faction with it: the shared player carries on with whoever is left,
+		// and the faction that has the slot's number is one of the enemies.
+		return;
 	}
 
 	// Apply the configured leave behavior to their resources.
