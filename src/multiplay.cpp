@@ -1808,6 +1808,31 @@ bool recvMessage()
 		case NET_COOP_PAUSE:
 			recvCoopPause(queue);
 			break;
+		case NET_COOP_NEXT_LEVEL:
+			recvCoopNextLevel(queue);
+			break;
+		case NET_COOP_LOAD:
+			recvCoopLoad(queue);
+			break;
+		// a co-op game loading a saved game sends it over (a map or mod is never sent during a game)
+		case NET_FILE_REQUESTED:
+			if (isCoopGame() && NetPlay.isHost)
+			{
+				recvMapFileRequested(queue);
+			}
+			break;
+		case NET_FILE_PAYLOAD:
+			if (isCoopGame() && !NetPlay.isHost)
+			{
+				NETrecvFile(queue);
+			}
+			break;
+		case NET_FILE_CANCELLED:
+			if (isCoopGame() && NetPlay.isHost)
+			{
+				recvMapFileCancelled(queue);
+			}
+			break;
 		case GAME_RESEARCHSTATUS:
 			recvResearchStatus(queue);
 			break;
@@ -2698,6 +2723,24 @@ bool recvMapFileRequested(NETQUEUE queue)
 	netPlayersUpdated = true;  // Show download icon on player.
 
 	return true;
+}
+
+// A client doesn't want the file after all
+void recvMapFileCancelled(NETQUEUE queue)
+{
+	Sha256 hash;
+	hash.setZero();
+	auto r = NETbeginDecode(queue, NET_FILE_CANCELLED);
+	NETbin(r, hash.bytes, hash.Bytes);
+	NETend(r);
+
+	auto &pWzFiles = NetPlay.players[queue.index].wzFiles;
+	if (pWzFiles == nullptr)
+	{
+		return;
+	}
+	auto &wzFiles = *pWzFiles;
+	wzFiles.erase(std::remove_if(wzFiles.begin(), wzFiles.end(), [&](WZFile const &file) { return file.hash == hash; }), wzFiles.end());
 }
 
 // Continue sending maps and mods.

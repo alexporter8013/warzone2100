@@ -305,8 +305,15 @@ static GAMECODE renderLoop()
 			debug(LOG_NEVER, "Returned %s", sRequestResult);
 			if (bRequestLoad)
 			{
-				loopMissionState = LMS_LOADGAME;
-				sstrcpy(saveGameName, sRequestResult);
+				if (isCoopGame())
+				{
+					coopHostOfferLoad(sRequestResult);
+				}
+				else
+				{
+					loopMissionState = LMS_LOADGAME;
+					sstrcpy(saveGameName, sRequestResult);
+				}
 			}
 			else
 			{
@@ -368,6 +375,8 @@ static GAMECODE renderLoop()
 	}
 
 	pie_GetResetCounts(&loopPieCount, &loopPolyCount);
+
+	coopMissionUpdate();
 
 	// deal with the mission state
 	if (loopMissionState != LMS_NORMAL)

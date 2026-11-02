@@ -1950,6 +1950,7 @@ static bool stageThreeInitialiseSync()
 	{
 		debug(LOG_INFO, "Multiplayer game start: announcing ourselves (cold load: %d, comms: %d)", (int)wasColdLoad, (int)NetPlay.bComms);
 		cameraToHome(selectedPlayer, false, fromSave);
+		coopLevelChangeDone();
 		playerResponding(); // say howdy!
 		if (NetPlay.bComms && !NETisReplay())
 		{
@@ -2060,7 +2061,8 @@ bool stageThreeShutDown()
 
 	audio_StopAll();
 
-	if (bMultiPlayer)
+	// (a co-op campaign carries its network session over from one level to the next)
+	if (bMultiPlayer && !coopLevelChangeInProgress())
 	{
 		multiGameShutdown();
 	}

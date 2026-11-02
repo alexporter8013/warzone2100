@@ -215,6 +215,18 @@ static bool _intAddInGameOptions()
 		}
 	}
 
+	// A co-op campaign is saved and loaded by its host
+	if (isCoopGame() && NetPlay.isHost)
+	{
+		addIGTextButton(INTINGAMEOP_LOAD_COOP, INTINGAMEOP_1_X, INTINGAMEOPAUTO_Y_LINE(row), INTINGAMEOP_OP_W, _("Load Game"), OPALIGN);
+		row++;
+	}
+	if (isCoopGame() && NetPlay.isHost && !getCamTweakOption_AutosavesOnly())
+	{
+		addIGTextButton(INTINGAMEOP_SAVE_COOP, INTINGAMEOP_1_X, INTINGAMEOPAUTO_Y_LINE(row), INTINGAMEOP_OP_W, _("Save Game"), OPALIGN);
+		row++;
+	}
+
 	// add 'quit' text
 	if (NetPlay.isHost && bMultiPlayer && NetPlay.bComms)
 	{
@@ -539,6 +551,14 @@ void intProcessInGameOptions(UDWORD id)
 	case INTINGAMEOP_SAVE_SKIRMISH:
 		intCloseInGameOptions(true, false);
 		addLoadSave(SAVE_INGAME_SKIRMISH, _("Save Skirmish Game"));
+		break;
+	case INTINGAMEOP_LOAD_COOP:
+		intCloseInGameOptions(true, false);
+		addLoadSave(LOAD_INGAME_COOP, _("Load Co-op Campaign Saved Game"));
+		break;
+	case INTINGAMEOP_SAVE_COOP:
+		intCloseInGameOptions(true, false);
+		addLoadSave(SAVE_INGAME_COOP, _("Save Co-op Campaign Game"));
 		break;
 
 	default:

@@ -111,6 +111,8 @@ static char	sCurrentConsoleText[MAX_CONSOLE_STRING_LENGTH];			//remember what us
 #define QUICKSAVE_SKI_FILENAME "savegames/skirmish/QuickSave.gam"
 #define QUICKSAVE_CAM_JSON_FILENAME QUICKSAVE_CAM_FOLDER "/gam.json"
 #define QUICKSAVE_SKI_JSON_FILENAME QUICKSAVE_SKI_FOLDER "/gam.json"
+#define QUICKSAVE_COOP_FOLDER "savegames/coop/QuickSave"
+#define QUICKSAVE_COOP_FILENAME "savegames/coop/QuickSave.gam"
 
 #define SPECTATOR_NO_OP() do { if (selectedPlayer >= MAX_PLAYERS || NetPlay.players[selectedPlayer].isSpectator) { return; } } while (0)
 
@@ -2737,9 +2739,14 @@ void kf_BuildNextPage()
 void kf_QuickSave()
 {
 	// Bail out if we're running a _true_ multiplayer game or are playing a tutorial
-	if (runningMultiplayer() || bInTutorial)
+	if ((runningMultiplayer() && !isCoopGame()) || bInTutorial)
 	{
 		console(_("QuickSave not allowed for multiplayer or tutorial games"));
+		return;
+	}
+	if (isCoopGame() && !NetPlay.isHost)
+	{
+		console(_("Only the host can QuickSave a co-op game"));
 		return;
 	}
 	if (InGameOpUp)
@@ -2765,8 +2772,9 @@ void kf_QuickSave()
 
 	// At the next safe point (see gamestate_capture.h)
 	requestGameStateCapture([]() {
-		const char *filename = bMultiPlayer ? QUICKSAVE_SKI_FILENAME : QUICKSAVE_CAM_FILENAME;
-		const char *quickSaveFolder = bMultiPlayer ? QUICKSAVE_SKI_FOLDER : QUICKSAVE_CAM_FOLDER;
+		const bool coop = isCoopGame();
+		const char *filename = coop ? QUICKSAVE_COOP_FILENAME : (bMultiPlayer ? QUICKSAVE_SKI_FILENAME : QUICKSAVE_CAM_FILENAME);
+		const char *quickSaveFolder = coop ? QUICKSAVE_COOP_FOLDER : (bMultiPlayer ? QUICKSAVE_SKI_FOLDER : QUICKSAVE_CAM_FOLDER);
 		if (WZ_PHYSFS_isDirectory(quickSaveFolder))
 		{
 			deleteSaveGame(quickSaveFolder);
@@ -2785,9 +2793,25 @@ void kf_QuickSave()
 void kf_QuickLoad()
 {
 	// Bail out if we're running a _true_ multiplayer game or are playing a tutorial
-	if (runningMultiplayer() || bInTutorial)
+	if ((runningMultiplayer() && !isCoopGame()) || bInTutorial)
 	{
 		console(_("QuickLoad not allowed for multiplayer or tutorial games"));
+		return;
+	}
+	if (isCoopGame())
+	{
+		if (!NetPlay.isHost)
+		{
+			console(_("Only the host can QuickLoad a co-op game"));
+		}
+		else if (!WZ_PHYSFS_isDirectory(QUICKSAVE_COOP_FOLDER))
+		{
+			console(_("QuickSave file does not exist yet"));
+		}
+		else
+		{
+			coopHostOfferLoad(QUICKSAVE_COOP_FILENAME);	// the others are sent the save first, then everyone loads it
+		}
 		return;
 	}
 	if (InGameOpUp)

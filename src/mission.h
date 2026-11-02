@@ -26,6 +26,7 @@
 #ifndef __INCLUDED_SRC_MISSION_H__
 #define __INCLUDED_SRC_MISSION_H__
 
+#include <string>
 #include "map.h"
 #include "power.h"
 #include "levels.h"
@@ -92,6 +93,26 @@ bool setUpMission(LEVEL_TYPE type);
 
 /** This causes the new mission data to be loaded up. */
 void launchMission();
+
+struct NETQUEUE;
+
+/** Co-op campaign: handles NET_COOP_NEXT_LEVEL (the host starting the next level, or a client being on its way). */
+void recvCoopNextLevel(NETQUEUE queue);
+
+/** Co-op campaign, host: offers the saved game to the other players and, once each has it, loads it for everyone. */
+bool coopHostOfferLoad(const std::string& savePath);
+
+/** Co-op campaign: handles NET_COOP_LOAD. */
+void recvCoopLoad(NETQUEUE queue);
+
+/** Co-op campaign: carries the next-level handshake on, once per frame. */
+void coopMissionUpdate();
+
+/** Co-op campaign: whether the level is changing under a running network session (which must not be shut down). */
+bool coopLevelChangeInProgress();
+
+/** Co-op campaign: the new level is up; the session is no longer between levels. */
+void coopLevelChangeDone();
 
 /** The update routine for all droids left back at home base. Only interested in Transporters at present. */
 void missionDroidUpdate(DROID *psDroid);

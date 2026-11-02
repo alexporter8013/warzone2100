@@ -52,6 +52,7 @@ bool recvLasSat(NETQUEUE queue);
 void recvStructureInfo(NETQUEUE queue);
 bool recvMapFileData(NETQUEUE queue);
 bool recvMapFileRequested(NETQUEUE queue);
+void recvMapFileCancelled(NETQUEUE queue);
 
 bool recvTextMessageAI(NETQUEUE queue);         //AI multiplayer message
 bool recvTeamRequest(NETQUEUE queue);

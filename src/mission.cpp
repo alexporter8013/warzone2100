@@ -99,6 +99,8 @@
 #include "wzapi.h"
 #include "screens/guidescreen.h"
 #include "lib/framework/loading_task.h"
+#include "gamestate_savegame.h"
+#include "multiint.h"
 
 #define		IDMISSIONRES_TXT		11004
 #define		IDMISSIONRES_LOAD		11005
@@ -108,6 +110,24 @@
 #define		IDMISSIONRES_TABS		11015
 #define		IDMISSIONRES_STATSFORM		11016
 #define		IDMISSIONRES_RESEARCHFORM	11017
+
+// Co-op next-level handshake (see missionContineButtonPressed)
+static bool coopHostWaiting = false;		// the host has asked, and is waiting for the acknowledgements
+static bool coopGoReceived = false;			// a client has been asked, and is waiting for its result screen
+static bool coopAckPending[MAX_CONNECTED_PLAYERS];
+static bool coopClockHeld = false;			// the host stopped its game time to send nothing more this level
+static bool coopLevelChange = false;		// the level is changing under a running network session
+static bool coopLoadingSave = false;		// ...by loading a saved game, whose teardown also releases the mission data
+// Co-op: loading a saved game into the running session, which the next-level handshake carries out once everyone has it
+static bool coopLoadOffered = false;		// host: the offer is out, and the clients are fetching the save
+static bool coopLoadReadyPending[MAX_CONNECTED_PLAYERS];
+static std::string coopLoadHostPath;		// host: the save to load
+static UDWORD coopLoadOfferTime = 0;
+static bool coopLoadClientActive = false;	// client: offered a save, and has not said yet whether it has it
+static bool coopLoadGo = false;				// the level change under way loads coopLoadPath instead of the next level
+static std::string coopLoadPath;
+static void launchMissionNow();
+static void coopHostBeginNextLevel(bool loadSave = false);
 
 /* Mission timer label position */
 #define		TIMER_LABELX			15
@@ -450,6 +470,14 @@ bool missionLimboExpand()
 void initMission()
 {
 	debug(LOG_SAVE, "*** Init Mission ***");
+	coopHostWaiting = false;
+	coopGoReceived = false;
+	coopLevelChange = false;
+	coopLoadingSave = false;
+	coopClockHeld = false;
+	coopLoadOffered = false;
+	coopLoadClientActive = false;
+	coopLoadGo = false;
 	mission.type = LEVEL_TYPE::LDS_NONE;
 	for (int inc = 0; inc < MAX_PLAYERS; inc++)
 	{
@@ -497,6 +525,17 @@ void releaseMission()
 
 	/* apsLimboDroids may contain some droids that have been saved at the end of one mission and not yet used */
 	freeAllLimboDroids();
+
+	// Quit from a co-op result screen: stageThreeShutDown left the session up for a next level that is not coming
+	// (a saved game load tears the old game down through here too, and does keep the session)
+	if (coopLevelChange && !coopLoadingSave)
+	{
+		coopLevelChange = false;
+		if (bMultiPlayer)
+		{
+			multiGameShutdown();
+		}
+	}
 }
 
 //called to shut down when mid-mission on an offWorld map
@@ -2670,22 +2709,25 @@ static bool _intAddMissionResult(bool result, bool bPlaySuccess, bool showBackDr
 	};
 	// the game can't continue without the host
 	bool multiplayerHostQuit = bMultiPlayer && NetPlay.bComms && !NetPlay.isHost && !NetPlay.isHostAlive;
+	// (a co-op campaign has the options of a campaign: its win, loss and end of the campaign are not a multiplayer game's)
+	const bool multiplayerGame = bMultiPlayer && !isCoopGame();
 
 	//if won
-	if (result || bMultiPlayer)
+	if (result || multiplayerGame)
 	{
 		// Finished the mission, so display "Continue Game"
-		if ((!testPlayerHasWon() || bMultiPlayer) && !multiplayerHostQuit)
+		if ((!testPlayerHasWon() || multiplayerGame) && !multiplayerHostQuit)
 		{
 			sButInit.x			= MISSION_1_X;
 			sButInit.y			= MISSION_1_Y;
 			sButInit.id			= IDMISSIONRES_CONTINUE;
-			sButInit.pText		= _("Continue Game");//"Continue Game";
+			// in a co-op campaign only the host moves everyone on
+			sButInit.pText		= (isCoopGame() && !NetPlay.isHost) ? _("Waiting for the host...") : _("Continue Game");
 			widgAddButton(psWScreen, &sButInit);
 		}
 
 		// Won the game, so display "Quit to main menu"
-		if (bMultiPlayer || (testPlayerHasWon() && !bMultiPlayer))
+		if (multiplayerGame || testPlayerHasWon())
 		{
 			sButInit.x			= MISSION_2_X;
 			sButInit.y			= MISSION_2_Y;
@@ -2701,12 +2743,15 @@ static bool _intAddMissionResult(bool result, bool bPlaySuccess, bool showBackDr
 	}
 	else
 	{
-		//load
-		sButInit.id			= IDMISSIONRES_LOAD;
-		sButInit.x			= MISSION_1_X;
-		sButInit.y			= MISSION_1_Y;
-		sButInit.pText		= _("Load Saved Game");//"Load Saved Game";
-		widgAddButton(psWScreen, &sButInit);
+		//load (in a co-op campaign only the host loads, for everyone)
+		if (!isCoopGame() || NetPlay.isHost)
+		{
+			sButInit.id			= IDMISSIONRES_LOAD;
+			sButInit.x			= MISSION_1_X;
+			sButInit.y			= MISSION_1_Y;
+			sButInit.pText		= _("Load Saved Game");//"Load Saved Game";
+			widgAddButton(psWScreen, &sButInit);
+		}
 		//quit
 		sButInit.id			= IDMISSIONRES_QUIT;
 		sButInit.x			= MISSION_2_X;
@@ -2785,7 +2830,45 @@ void intRunMissionResult()
 	}
 }
 
-static void missionContineButtonPressed()
+// Co-op campaign: the host decides when the shared mission ends. It stops its clock and asks every human to start
+// the next level, then loads once each has said it is on its way. That acknowledgement follows every game message its
+// sender queued for this level, so none can arrive after the next level has reset the game queues.
+enum CoopNextLevelPhase
+{
+	COOP_NEXT_LEVEL_GO,		// host to all
+	COOP_NEXT_LEVEL_ACK,	// client to host
+	COOP_NEXT_LEVEL_GO_LOAD,	// host to all: load the saved game they have been sent instead
+};
+
+enum CoopLoadPhase
+{
+	COOP_LOAD_OFFER,		// host to all: the saved game (its hash and name) the host wants to load
+	COOP_LOAD_READY,		// client to host: it has the save
+	COOP_LOAD_DECLINE,		// client to host: it won't take the save
+	COOP_LOAD_CANCEL,		// host to all: never mind
+};
+
+// The next level's game start overlay waits for every human to respond, so each must count as still loading
+static void coopMarkPlayersLoading()
+{
+	for (unsigned i = 0; i < MAX_CONNECTED_PLAYERS; ++i)
+	{
+		if (isHumanPlayer(i))
+		{
+			ingame.JoiningInProgress[i] = true;
+		}
+	}
+}
+
+static void coopSendNextLevel(NETQUEUE queue, CoopNextLevelPhase phase)
+{
+	auto w = NETbeginEncode(queue, NET_COOP_NEXT_LEVEL);
+	NETuint8_t(w, phase);
+	NETend(w);
+	NETflush();
+}
+
+static void startNextMission()
 {
 	if (nextMissionType == LEVEL_TYPE::LDS_CAMSTART
 	    || nextMissionType == LEVEL_TYPE::LDS_BETWEEN
@@ -2802,13 +2885,313 @@ static void missionContineButtonPressed()
 	}
 }
 
+// Asks every human to start the next level, once this one is over (the host's Continue button, or a level change
+// that needs no button)
+static void coopHostBeginNextLevel(bool loadSave)
+{
+	if (coopHostWaiting)
+	{
+		return;
+	}
+
+	debug(LOG_INFO, "Co-op: the host is moving everyone on to the %s", loadSave ? "saved game" : "next level");
+	coopLoadGo = loadSave;
+	coopLoadPath = coopLoadHostPath;
+	coopMarkPlayersLoading();
+	bool anyClient = false;
+	for (unsigned i = 0; i < MAX_CONNECTED_PLAYERS; ++i)
+	{
+		coopAckPending[i] = i != NetPlay.hostPlayer && isHumanPlayer(i);
+		anyClient = anyClient || coopAckPending[i];
+	}
+	coopSendNextLevel(NETbroadcastQueue(), loadSave ? COOP_NEXT_LEVEL_GO_LOAD : COOP_NEXT_LEVEL_GO);
+	// nothing more is sent for this level, or it would land after the clients have begun the next one
+	gameTimeStop();
+	coopClockHeld = true;
+	// the loop must not set the mission up again meanwhile
+	loopMissionState = LMS_SAVECONTINUE;
+	coopHostWaiting = true;
+	if (!anyClient)
+	{
+		coopMissionUpdate();
+	}
+}
+
+static void missionContineButtonPressed()
+{
+	debug(LOG_INFO, "Continue pressed (co-op: %d, host: %d, next mission type: %d)", (int)isCoopGame(), (int)NetPlay.isHost, (int)nextMissionType);
+	if (!isCoopGame())
+	{
+		startNextMission();
+		return;
+	}
+	if (NetPlay.isHost && (nextMissionType == LEVEL_TYPE::LDS_CAMSTART
+	                       || nextMissionType == LEVEL_TYPE::LDS_BETWEEN
+	                       || nextMissionType == LEVEL_TYPE::LDS_EXPAND
+	                       || nextMissionType == LEVEL_TYPE::LDS_EXPAND_LIMBO))
+	{
+		coopHostBeginNextLevel();
+	}
+}
+
+void recvCoopNextLevel(NETQUEUE queue)
+{
+	uint8_t phase = 0;
+	auto r = NETbeginDecode(queue, NET_COOP_NEXT_LEVEL);
+	NETuint8_t(r, phase);
+	NETend(r);
+
+	if (!isCoopGame())
+	{
+		return;
+	}
+	if (phase == COOP_NEXT_LEVEL_GO && !NetPlay.isHost && queue.index == NetPlay.hostPlayer)
+	{
+		debug(LOG_INFO, "Co-op: the host is moving everyone on to the next level (result screen up: %d)", (int)(loopMissionState == LMS_SAVECONTINUE));
+		coopMarkPlayersLoading();
+		coopGoReceived = true;
+	}
+	else if (phase == COOP_NEXT_LEVEL_GO_LOAD && !NetPlay.isHost && queue.index == NetPlay.hostPlayer)
+	{
+		if (!multiLobbyCoopSaveIsHere())
+		{
+			debug(LOG_ERROR, "Co-op: the host is loading a saved game that we don't have");
+			return;
+		}
+		debug(LOG_INFO, "Co-op: the host is loading a saved game");
+		coopMarkPlayersLoading();
+		coopLoadGo = true;
+		coopLoadPath = multiLobbyCoopSaveDownloadFolder(multiLobbyCoopSaveHash()) + ".gam";
+		coopGoReceived = true;
+		loopMissionState = LMS_SAVECONTINUE;	// nothing more is played or sent for this game
+	}
+	else if (phase == COOP_NEXT_LEVEL_ACK && NetPlay.isHost && coopHostWaiting && queue.index < MAX_CONNECTED_PLAYERS)
+	{
+		debug(LOG_INFO, "Co-op: player %u is on its way to the next level", (unsigned)queue.index);
+		coopAckPending[queue.index] = false;
+	}
+}
+
+// Everyone has agreed: the level change itself. The network session carries on through it.
+static void coopLaunchNextLevel()
+{
+	coopLevelChange = true;
+	if (coopLoadGo)
+	{
+		// the load tears the game down itself, and puts the saved one up
+		coopLoadGo = false;
+		coopLoadOffered = false;
+		coopLoadingSave = true;
+		sstrcpy(saveGameName, coopLoadPath.c_str());
+		loopMissionState = LMS_LOADGAME;
+		return;
+	}
+	launchMissionNow();
+	if (MissionResUp)
+	{
+		widgDelete(psWScreen, IDMISSIONRES_FORM);
+		intRemoveMissionResultNoAnim();
+	}
+}
+
+bool coopLevelChangeInProgress()
+{
+	return coopLevelChange;
+}
+
+void coopLevelChangeDone()
+{
+	coopLevelChange = false;
+	coopLoadingSave = false;
+	if (coopClockHeld)
+	{
+		// the new level's own stops and starts are balanced, so this one would otherwise keep the clock stopped for good
+		coopClockHeld = false;
+		gameTimeStart();
+	}
+}
+
+static void coopLoadCancel(const char *why)
+{
+	coopLoadOffered = false;
+	addConsoleMessage(why, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+	auto w = NETbeginEncode(NETbroadcastQueue(), NET_COOP_LOAD);
+	NETuint8_t(w, COOP_LOAD_CANCEL);
+	NETend(w);
+	NETflush();
+}
+
+bool coopHostOfferLoad(const std::string& savePath)
+{
+	if (!isCoopGame() || !NetPlay.isHost || coopHostWaiting || coopLoadOffered || loopMissionState != LMS_NORMAL)
+	{
+		addConsoleMessage(_("A saved game can't be loaded right now."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		return false;
+	}
+	gamestate::savegame::LobbySaveInfo info;
+	if (!gamestate::savegame::peekCoopSaveForLobby(savePath, info) || !info.isCoopCampaign)
+	{
+		addConsoleMessage(_("That is not a co-op campaign save."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		return false;
+	}
+
+	multiLobbyHostServeCoopSave(savePath, info.blobPath, info.blobHash);
+	coopLoadHostPath = savePath;
+	bool anyClient = false;
+	for (unsigned i = 0; i < MAX_CONNECTED_PLAYERS; ++i)
+	{
+		coopLoadReadyPending[i] = i != NetPlay.hostPlayer && isHumanPlayer(i);
+		anyClient = anyClient || coopLoadReadyPending[i];
+	}
+	if (!anyClient)
+	{
+		coopHostBeginNextLevel(true);
+		return true;
+	}
+
+	coopLoadOffered = true;
+	coopLoadOfferTime = realTime;
+	auto w = NETbeginEncode(NETbroadcastQueue(), NET_COOP_LOAD);
+	NETuint8_t(w, COOP_LOAD_OFFER);
+	Sha256 hash = info.blobHash;
+	NETbin(w, hash.bytes, hash.Bytes);
+	char name[128];
+	sstrcpy(name, multiLobbyCoopSaveName().c_str());
+	NETstring(w, name, sizeof(name));
+	NETend(w);
+	NETflush();
+	addConsoleMessage(_("Waiting for the other players to receive the saved game..."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+	return true;
+}
+
+void recvCoopLoad(NETQUEUE queue)
+{
+	uint8_t phase = 0;
+	Sha256 hash;
+	hash.setZero();
+	char name[128] = {'\0'};
+	auto r = NETbeginDecode(queue, NET_COOP_LOAD);
+	NETuint8_t(r, phase);
+	if (phase == COOP_LOAD_OFFER)
+	{
+		NETbin(r, hash.bytes, hash.Bytes);
+		NETstring(r, name, sizeof(name));
+	}
+	if (!NETend(r) || !isCoopGame() || queue.index >= MAX_CONNECTED_PLAYERS)
+	{
+		return;
+	}
+
+	const bool fromHost = queue.index == NetPlay.hostPlayer;
+	if (phase == COOP_LOAD_OFFER && !NetPlay.isHost && fromHost)
+	{
+		coopLoadClientActive = true;
+		multiLobbySetAnnouncedCoopSave(hash, name);
+		multiLobbyOfferCoopSaveDownload();	// asks the player, then fetches
+	}
+	else if (phase == COOP_LOAD_READY && NetPlay.isHost && coopLoadOffered)
+	{
+		coopLoadReadyPending[queue.index] = false;
+	}
+	else if (phase == COOP_LOAD_DECLINE && NetPlay.isHost && coopLoadOffered)
+	{
+		coopLoadCancel(astringf(_("%s did not accept the saved game, so it was not loaded."), getPlayerName(queue.index)).c_str());
+	}
+	else if (phase == COOP_LOAD_CANCEL && !NetPlay.isHost && fromHost)
+	{
+		coopLoadClientActive = false;
+		Sha256 none;
+		none.setZero();
+		multiLobbySetAnnouncedCoopSave(none, "");
+		addConsoleMessage(_("The host cancelled loading the saved game."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+	}
+}
+
+static void coopLoadUpdate()
+{
+	if (NetPlay.isHost && coopLoadOffered)
+	{
+		sendMap();
+		bool waiting = false;
+		for (unsigned i = 0; i < MAX_CONNECTED_PLAYERS; ++i)
+		{
+			if (coopLoadReadyPending[i] && !isHumanPlayer(i))
+			{
+				coopLoadReadyPending[i] = false;	// left meanwhile
+			}
+			waiting = waiting || coopLoadReadyPending[i];
+		}
+		if (!waiting)
+		{
+			coopLoadOffered = false;
+			coopHostBeginNextLevel(true);
+		}
+		else if (realTime - coopLoadOfferTime > 180 * 1000)
+		{
+			coopLoadCancel(_("The other players did not receive the saved game in time, so it was not loaded."));
+		}
+	}
+	else if (!NetPlay.isHost && coopLoadClientActive)
+	{
+		if (multiLobbyCoopSaveDeclined())
+		{
+			coopLoadClientActive = false;
+			auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_COOP_LOAD);
+			NETuint8_t(w, COOP_LOAD_DECLINE);
+			NETend(w);
+		}
+		else if (multiLobbyCoopSaveIsHere())
+		{
+			coopLoadClientActive = false;
+			auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_COOP_LOAD);
+			NETuint8_t(w, COOP_LOAD_READY);
+			NETend(w);
+		}
+	}
+}
+
+void coopMissionUpdate()
+{
+	coopLoadUpdate();
+	if (coopHostWaiting)
+	{
+		bool waiting = false;
+		for (unsigned i = 0; i < MAX_CONNECTED_PLAYERS; ++i)
+		{
+			if (coopAckPending[i] && !isHumanPlayer(i))
+			{
+				coopAckPending[i] = false;	// left meanwhile
+			}
+			waiting = waiting || coopAckPending[i];
+		}
+		if (!waiting)
+		{
+			coopHostWaiting = false;
+			coopLaunchNextLevel();
+		}
+	}
+	else if (coopGoReceived && loopMissionState == LMS_SAVECONTINUE)
+	{
+		coopGoReceived = false;
+		coopSendNextLevel(NETnetQueue(NetPlay.hostPlayer), COOP_NEXT_LEVEL_ACK);
+		coopLaunchNextLevel();
+	}
+}
+
 void intProcessMissionResult(UDWORD id)
 {
 	switch (id)
 	{
 	case IDMISSIONRES_LOAD:
 		// throw up some filerequester
-		addLoadSave(LOAD_MISSIONEND, _("Load Saved Game"));
+		if (isCoopGame())
+		{
+			addLoadSave(LOAD_INGAME_COOP, _("Load Co-op Campaign Saved Game"));
+		}
+		else
+		{
+			addLoadSave(LOAD_MISSIONEND, _("Load Saved Game"));
+		}
 		break;
 	case IDMISSIONRES_SAVE:
 		addLoadSave(SAVE_MISSIONEND, _("Save Game"));
@@ -2860,8 +3243,13 @@ DROID *buildMissionDroid(DROID_TEMPLATE *psTempl, UDWORD x, UDWORD y, UDWORD pla
 {
 	DROID		*psNewDroid;
 
+	// The droid goes into a list of the mission world, and every peer builds it from the same tick of the same factory,
+	// so nothing is sent (a sent droid would be placed on the map, and a co-op peer rejects it as a debug droid).
+	const bool prevMultiMessages = bMultiMessages;
+	bMultiMessages = false;
 	// XXX: gameWorld.map - should be mission.gameWorld.map really (but keeping it for now to ensure it works exactly as before)
 	psNewDroid = buildDroid(gameWorld, psTempl, world_coord(x), world_coord(y), player, true, nullptr);
+	bMultiMessages = prevMultiMessages;
 	if (!psNewDroid)
 	{
 		return nullptr;
@@ -2881,7 +3269,7 @@ DROID *buildMissionDroid(DROID_TEMPLATE *psTempl, UDWORD x, UDWORD y, UDWORD pla
 }
 
 //this causes the new mission data to be loaded up - only if startMission has been called
-void launchMission()
+static void launchMissionNow()
 {
 	//if (mission.type == MISSION_NONE)
 	if (mission.type == LEVEL_TYPE::LDS_NONE)
@@ -2895,10 +3283,45 @@ void launchMission()
 	}
 }
 
+void launchMission()
+{
+	if (!isCoopGame())
+	{
+		launchMissionNow();
+		return;
+	}
+	// the host picks the moment, and the clients follow once it has said so
+	debug(LOG_INFO, "Co-op: the mission is over (host: %d)", (int)NetPlay.isHost);
+	if (NetPlay.isHost)
+	{
+		coopHostBeginNextLevel();
+	}
+	else
+	{
+		loopMissionState = LMS_SAVECONTINUE;
+	}
+}
+
+
+// The result screen of a co-op level leaves the world half released (stageThreeShutDown has not run, the map and its
+// terrain are the other world's), and unlike in single player nothing else stops it being drawn. Ticks are already
+// held off by the pending level change; this stops the drawing and the input handling that go with the world.
+static void coopFreezeWorldForResult()
+{
+	if (isCoopGame())
+	{
+		setGameUpdatePause(true);
+	}
+}
 
 //sets up the game to start a new mission
 bool setUpMission(LEVEL_TYPE type)
 {
+	debug(LOG_INFO, "Setting up the mission end (type: %d, co-op: %d, networked: %d)", (int)type, (int)isCoopGame(), (int)isNetworkedGame());
+	// Releasing the level's data below shuts the game down in stageThreeShutDown, which must leave the co-op network
+	// session up for the next level. Quitting from the result screen ends it in releaseMission.
+	coopLevelChange = isCoopGame();
+
 	// Close the interface
 	intResetScreen(true);
 
@@ -2939,6 +3362,7 @@ bool setUpMission(LEVEL_TYPE type)
 		}
 		clearCampaignName();
 		loopMissionState = LMS_SAVECONTINUE;
+		coopFreezeWorldForResult();
 	}
 	else if (type == LEVEL_TYPE::LDS_MKEEP
 	         || type == LEVEL_TYPE::LDS_MCLEAR
@@ -2970,6 +3394,7 @@ bool setUpMission(LEVEL_TYPE type)
 			return false;
 		}
 		loopMissionState = LMS_SAVECONTINUE;
+		coopFreezeWorldForResult();
 	}
 
 	return true;
@@ -3021,6 +3446,11 @@ void resetMissionPauseState()
 		setScriptPause(false);
 		setConsolePause(false);
 		gameTimeStart();
+	}
+	else if (isCoopGame())
+	{
+		// (the clock is not stopped by the result screen)
+		setGameUpdatePause(false);
 	}
 }
 

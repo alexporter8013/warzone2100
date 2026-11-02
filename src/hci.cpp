@@ -1150,8 +1150,15 @@ INT_RETVAL intRunWidgets()
 	{
 		if (bRequestLoad)
 		{
-			loopMissionState = LMS_LOADGAME;
-			sstrcpy(saveGameName, sRequestResult);
+			if (isCoopGame())
+			{
+				coopHostOfferLoad(sRequestResult); // everyone has to have the save before anyone loads it
+			}
+			else
+			{
+				loopMissionState = LMS_LOADGAME;
+				sstrcpy(saveGameName, sRequestResult);
+			}
 		}
 		else
 		{
