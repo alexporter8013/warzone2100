@@ -78,6 +78,9 @@ typedef void (AL_APIENTRY *GetSourcedvSOFTProc)(ALuint source, ALenum param, ALd
 // Screen dimensions
 #define NUM_VERTICES 4
 static std::unique_ptr<GFX> videoGfx = nullptr;
+// The video quad is uploaded when next drawn: a video that starts mid-frame sets its size and starts in the same frame,
+// and a buffer may be uploaded only once per frame
+static bool videoGeometryStale = false;
 static gfx_api::gfxFloat vertices[NUM_VERTICES][2];
 static gfx_api::gfxFloat Scrnvidpos[3];
 
@@ -700,12 +703,20 @@ static void video_upload_faded(const std::vector<uint8_t>& fadeBase, float level
 	videoGfx->updateTexture(VideoFrameBitmap);
 }
 
+static void upload_video_geometry();
+
 /** Draw the current video texture to the screen */
 static void video_draw()
 {
 	if (!videoGfx)
 	{
 		return;
+	}
+
+	if (videoGeometryStale)
+	{
+		videoGeometryStale = false;
+		upload_video_geometry();
 	}
 
 	const auto& modelViewProjectionMatrix = glm::ortho(0.f, static_cast<float>(pie_GetVideoBufferWidth()), static_cast<float>(pie_GetVideoBufferHeight()), 0.f) *
@@ -717,6 +728,11 @@ static void video_draw()
 }
 
 void update_buffers()
+{
+	videoGeometryStale = true;
+}
+
+static void upload_video_geometry()
 {
 	if (videoGfx == nullptr || !playback || videoTextureWidth == 0 || videoTextureHeight == 0)
 	{

@@ -888,9 +888,10 @@ void gl_texture_array::flush()
 
 // MARK: gl_buffer
 
-gl_buffer::gl_buffer(const gfx_api::buffer::usage& usage, const gfx_api::context::buffer_storage_hint& hint)
+gl_buffer::gl_buffer(const gfx_api::buffer::usage& usage, const gfx_api::context::buffer_storage_hint& hint, const std::string& debugName)
 : usage(usage)
 , hint(hint)
+, debugName(debugName)
 {
 	glGenBuffers(1, &buffer);
 }
@@ -914,7 +915,7 @@ void gl_buffer::upload(const size_t & size, const void * data)
 {
 	size_t current_FrameNum = gfx_api::context::get().current_FrameNum();
 #if defined(DEBUG)
-	ASSERT(lastUploaded_FrameNum != current_FrameNum, "Attempt to upload to buffer more than once per frame");
+	ASSERT(lastUploaded_FrameNum != current_FrameNum, "Attempt to upload to buffer more than once per frame (buffer: \"%s\")", debugName.c_str());
 #endif
 	lastUploaded_FrameNum = current_FrameNum;
 
@@ -929,7 +930,7 @@ void gl_buffer::update(const size_t & start, const size_t & size, const void * d
 {
 	size_t current_FrameNum = gfx_api::context::get().current_FrameNum();
 #if defined(DEBUG)
-	ASSERT(flag == update_flag::non_overlapping_updates_promise || (lastUploaded_FrameNum != current_FrameNum), "Attempt to upload to buffer more than once per frame");
+	ASSERT(flag == update_flag::non_overlapping_updates_promise || (lastUploaded_FrameNum != current_FrameNum), "Attempt to upload to buffer more than once per frame (buffer: \"%s\")", debugName.c_str());
 #endif
 	lastUploaded_FrameNum = current_FrameNum;
 
@@ -2519,7 +2520,7 @@ std::unique_ptr<gl_gpurendered_renderbuffer> gl_context::create_framebuffer_rend
 
 gfx_api::buffer * gl_context::create_buffer_object(const gfx_api::buffer::usage &usage, const buffer_storage_hint& hint /*= buffer_storage_hint::static_draw*/, const std::string& debugName /*= ""*/)
 {
-	return new gl_buffer(usage, hint);
+	return new gl_buffer(usage, hint, debugName);
 }
 
 gfx_api::pipeline_state_object* gl_context::build_pipeline(gfx_api::pipeline_state_object *existing_pso, const gfx_api::pipeline_create_info& createInfo)

@@ -205,9 +205,10 @@ struct gl_buffer final : public gfx_api::buffer
 	GLuint buffer = 0;
 	size_t buffer_size = 0;
 	size_t lastUploaded_FrameNum = 0;
+	std::string debugName;
 
 public:
-	gl_buffer(const gfx_api::buffer::usage& usage, const gfx_api::context::buffer_storage_hint& hint);
+	gl_buffer(const gfx_api::buffer::usage& usage, const gfx_api::context::buffer_storage_hint& hint, const std::string& debugName = "");
 	virtual ~gl_buffer() override;
 
 	void bind() override;

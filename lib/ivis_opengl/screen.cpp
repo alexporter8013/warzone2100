@@ -68,6 +68,9 @@ static bool		screendump_required = false;
 
 static GFX *backdropGfx = nullptr;
 static bool backdropIsMapPreview = false;
+// The backdrop geometry is uploaded when next drawn: refreshes can come in several times within a frame (a new backdrop
+// and a changed screen size), and a buffer may be uploaded only once per frame
+static bool backdropGeometryStale = true;
 
 static bool perfStarted = false;
 struct PERF_STORE
@@ -96,6 +99,7 @@ bool screenInitialise()
 
 	// Generate backdrop render
 	backdropGfx = new GFX(GFX_TEXTURE, 2);
+	backdropGeometryStale = true;
 
 	return true;
 }
@@ -311,6 +315,12 @@ bool screen_GetBackDrop()
 
 void screen_Display()
 {
+	if (backdropGeometryStale)
+	{
+		backdropGeometryStale = false;
+		screen_GenerateCoordinatesAndVBOs();
+	}
+
 	// Draw backdrop
 	const auto& modelViewProjectionMatrix = glm::ortho(0.f, (float)pie_GetVideoBufferWidth(), (float)pie_GetVideoBufferHeight(), 0.f);
 	gfx_api::BackDropPSO::get().bind();
@@ -413,7 +423,7 @@ static void screen_RefreshBackdropGeometry()
 	{
 		return;
 	}
-	screen_GenerateCoordinatesAndVBOs();
+	backdropGeometryStale = true;
 }
 
 // Deferred when the screen frame is closed (next pie_ScreenFrameRenderBegin); immediate when mid-frame.
