@@ -5381,7 +5381,10 @@ const char *messageTypeToString(unsigned messageType_)
 	case NET_TEAM_STRATEGY:				return "NET_TEAM_STRATEGY";
 	case NET_QUICK_CHAT_MSG:			return "NET_QUICK_CHAT_MSG";
 	case NET_HOST_CONFIG:				return "NET_HOST_CONFIG";
-	case NET_MAX_TYPE:                  return "NET_MAX_TYPE";
+	case NET_COOP_NEXT_LEVEL:			return "NET_COOP_NEXT_LEVEL";
+	case NET_COOP_LOAD:				return "NET_COOP_LOAD";
+	case NET_COOP_PAUSE:				return "NET_COOP_PAUSE";
+	case NET_MAX_TYPE:                 return "NET_MAX_TYPE";
 
 	// Game-state-related messages, must be processed by all clients at the same game time.
 	case GAME_MIN_TYPE:                 return "GAME_MIN_TYPE";
@@ -5396,6 +5399,8 @@ const char *messageTypeToString(unsigned messageType_)
 	case GAME_GAME_TIME:                return "GAME_GAME_TIME";
 	case GAME_PLAYER_LEFT:              return "GAME_PLAYER_LEFT";
 	case GAME_DROIDDISEMBARK:           return "GAME_DROIDDISEMBARK";
+	case GAME_DROIDEMBARK:              return "GAME_DROIDEMBARK";
+	case GAME_TRANSPORTERLAUNCH:        return "GAME_TRANSPORTERLAUNCH";
 	case GAME_SYNC_REQUEST:             return "GAME_SYNC_REQUEST";
 
 	// The following messages are used for debug mode.

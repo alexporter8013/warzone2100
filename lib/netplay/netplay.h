@@ -119,7 +119,10 @@ enum MESSAGE_TYPES
 	NET_TEAM_STRATEGY,				///< Player is sending an updated strategy notice to team members
 	NET_QUICK_CHAT_MSG,				///< Quick chat message
 	NET_HOST_CONFIG,				///< Host configuration sent both before the game has started (in lobby), and after the game has started
-	NET_MAX_TYPE,                   ///< Maximum+1 valid NET_ type, *MUST* be last.
+	NET_COOP_NEXT_LEVEL,			///< Co-op campaign: the host starts the next level (host to all), and the clients are on their way (client to host)
+	NET_COOP_LOAD,					///< Co-op campaign: loading a saved game into the running session (offer, ready, decline, cancel)
+	NET_COOP_PAUSE,					///< Co-op campaign: a player paused or resumed the game (one byte: 1 = paused)
+	NET_MAX_TYPE,                  ///< Maximum+1 valid NET_ type, *MUST* be last.
 
 	// Game-state-related messages, must be processed by all clients at the same game time.
 	GAME_MIN_TYPE = 111,            ///< Minimum-1 valid GAME_ type, *MUST* be first.
@@ -146,6 +149,8 @@ enum MESSAGE_TYPES
 	GAME_DEBUG_FINISH_RESEARCH,     ///< Research has been completed.
 	// End of debug messages.
 	GAME_SYNC_OPT_CHANGE,			///< Change synchronized options for a player (ex formation options)
+	GAME_TRANSPORTERLAUNCH,         ///< Co-op campaign: the transporter flies in reinforcements from the transporter interface
+	GAME_DROIDEMBARK,               ///< Co-op campaign: a droid was loaded into a Transporter from the transporter interface
 	GAME_MAX_TYPE,                  ///< Maximum+1 valid GAME_ type, *MUST* be last.
 
 	// The following messages are used for playing back replays.
