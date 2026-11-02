@@ -2079,15 +2079,17 @@ bool wzapi::buildDroid(WZAPI_PARAMS(STRUCTURE *psFactory, std::string templateNa
 		              "Invalid template %s for factory %s",
 		              getStatsName(psTemplate), getStatsName(psStruct->pStructureType));
 		// Delete similar template from existing list before adding this one
-		for (auto templ : apsTemplateList)
+		// (the player's own templates: apsTemplateList is the design screen's list, which can outlive what it points to)
+		enumerateTemplates(player, [&](DROID_TEMPLATE *templ)
 		{
-			if (templ->name.compare(psTemplate->name) == 0)
+			if (templ->name.compare(psTemplate->name) != 0)
 			{
-				debug(LOG_SCRIPT, "deleting %s for player %d", getStatsName(templ), player);
-				deleteTemplateFromProduction(templ, player, ModeQueue); // duplicate? done below?
-				break;
+				return true;
 			}
-		}
+			debug(LOG_SCRIPT, "deleting %s for player %d", getStatsName(templ), player);
+			deleteTemplateFromProduction(templ, player, ModeQueue); // duplicate? done below?
+			return false;
+		});
 		// Add to list
 		debug(LOG_SCRIPT, "adding template %s for player %d", getStatsName(psTemplate), player);
 		psTemplate->multiPlayerID = generateNewObjectId();
@@ -2210,7 +2212,7 @@ wzapi::returned_nullable_ptr<const FEATURE> wzapi::addFeature(WZAPI_PARAMS(std::
 	for (const FEATURE *psFeat : gameWorld.objects.features[0])
 	{
 		SCRIPT_ASSERT(nullptr, context, map_coord(psFeat->pos.x) != x || map_coord(psFeat->pos.y) != y,
-		              "Building feature on tile already occupied");
+		              "Building feature on tile (%d, %d) already occupied by %s (id %u)", x, y, psFeat->psStats->id.toUtf8().c_str(), static_cast<unsigned>(psFeat->id));
 	}
 	FEATURE *psFeature = buildFeature(gameWorld, psStats, world_coord(x), world_coord(y), false);
 	return psFeature;
