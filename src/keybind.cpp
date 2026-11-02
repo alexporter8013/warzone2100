@@ -1488,14 +1488,8 @@ void kf_toggleTrapCursor()
 
 
 // --------------------------------------------------------------------------
-void	kf_TogglePauseMode()
+static void togglePauseLocally()
 {
-	// Bail out if we're running a _true_ multiplayer game (which cannot be paused)
-	if (runningMultiplayer())
-	{
-		return;
-	}
-
 	/* Is the game running? */
 	if (!gamePaused())
 	{
@@ -1595,6 +1589,51 @@ void	kf_TogglePauseMode()
 		/* And start the clock again */
 		gameTimeStart();
 	}
+}
+
+void kf_TogglePauseMode()
+{
+	if (isCoopGame())
+	{
+		// every machine stops together: the others are told, and either player can resume
+		const bool pausing = !gamePaused();
+		auto w = NETbeginEncode(NETbroadcastQueue(), NET_COOP_PAUSE);
+		NETbool(w, pausing);
+		NETend(w);
+		NETflush();
+		togglePauseLocally();
+		return;
+	}
+	// Bail out if we're running a _true_ multiplayer game (which cannot be paused)
+	if (runningMultiplayer())
+	{
+		return;
+	}
+	togglePauseLocally();
+}
+
+void kf_CoopTogglePause()
+{
+	if (isCoopGame())
+	{
+		kf_TogglePauseMode();
+	}
+}
+
+void recvCoopPause(NETQUEUE queue)
+{
+	bool pausing = false;
+	auto r = NETbeginDecode(queue, NET_COOP_PAUSE);
+	NETbool(r, pausing);
+	NETend(r);
+
+	if (!isCoopGame() || queue.index >= MAX_CONNECTED_PLAYERS || GetGameMode() != GS_NORMAL || pausing == gamePaused())
+	{
+		return;
+	}
+	const char *name = NetPlay.players[queue.index].name;
+	addConsoleMessage(astringf(pausing ? _("%s paused the game") : _("%s resumed the game"), name).c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+	togglePauseLocally();
 }
 
 // --------------------------------------------------------------------------

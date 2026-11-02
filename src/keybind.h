@@ -28,6 +28,8 @@
 #include "lib/framework/fixedpoint.h"
 #include "input/keyconfig.h"
 
+struct NETQUEUE;
+
 #define	MAP_ZOOM_RATE_MAX	(1000)
 #define	MAP_ZOOM_RATE_MIN	(200)
 #define	MAP_ZOOM_RATE_DEFAULT	(500)
@@ -91,6 +93,8 @@ void kf_SeekNorth();
 void kf_MaxScrollLimits();
 void kf_toggleTrapCursor();
 void kf_TogglePauseMode();
+void kf_CoopTogglePause();
+void recvCoopPause(NETQUEUE queue);
 
 void kf_ToggleEnergyBars();
 void kf_FinishAllResearch();

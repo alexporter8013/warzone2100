@@ -1805,6 +1805,9 @@ bool recvMessage()
 			}
 			break;
 		}
+		case NET_COOP_PAUSE:
+			recvCoopPause(queue);
+			break;
 		case GAME_RESEARCHSTATUS:
 			recvResearchStatus(queue);
 			break;

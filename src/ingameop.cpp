@@ -161,8 +161,8 @@ static bool _intAddInGameOptions()
 	// hide the spectator game over screen (if it's up) while the menu is open, so it doesn't block the menu
 	setSpectatorGameOverScreenVisible(false);
 
-	// Pause the game.
-	if (!gamePaused())
+	// Pause the game. Co-op doesn't: saving and changing settings shouldn't stop the others, so pausing is its own key
+	if (!isCoopGame() && !gamePaused())
 	{
 		kf_TogglePauseMode();
 	}
@@ -364,7 +364,7 @@ static void ProcessOptionFinished()
 {
 	intMode		= INT_NORMAL;
 
-	if (gamePaused())
+	if (!isCoopGame() && gamePaused())
 	{
 		kf_TogglePauseMode();
 	}
