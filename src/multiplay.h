@@ -315,6 +315,11 @@ bool SendDestroyStructure(const STRUCTURE *s);
 bool SendBuildFinished(const STRUCTURE *psStruct);
 bool sendLasSat(UBYTE player, const STRUCTURE *psStruct, const BASE_OBJECT *psObj);
 void sendStructureInfo(const STRUCTURE *psStruct, STRUCTURE_INFO structureInfo, const DROID_TEMPLATE *psTempl, const OrderSource &source);
+// Co-op campaigns share unit designs between all controllers of the shared player (no-ops outside co-op)
+void sendTemplateUpdate(const DROID_TEMPLATE *psTempl, int player);
+void sendTemplateDestroy(uint32_t multiPlayerID, int player);
+void recvTemplateUpdate(NETQUEUE queue);
+void recvTemplateDestroy(NETQUEUE queue);
 
 // features . multiplay
 bool SendDestroyFeature(const FEATURE *psFeature);

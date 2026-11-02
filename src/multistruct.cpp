@@ -30,7 +30,10 @@
 #include "lib/framework/frame.h"
 #include "lib/framework/math_ext.h"
 
+#include <algorithm>
+
 #include "design.h"
+#include "hci.h"
 #include "template.h"
 #include "droid.h"
 #include "droiddef.h"
@@ -277,6 +280,184 @@ bool recvLasSat(NETQUEUE queue)
 	}
 
 	return true;
+}
+
+// Co-op: every controller plays the same player, so they share its unit designs.
+// Without these messages a design only reaches the other clients inside a production order, and never their design screen.
+void sendTemplateUpdate(const DROID_TEMPLATE *pT, int player)
+{
+	ASSERT_OR_RETURN(, pT != nullptr && player >= 0 && player < MAX_PLAYERS, "Invalid template or player");
+	if (!isCoopGame())
+	{
+		return;
+	}
+
+	uint8_t playerByte = player;
+	int32_t droidType = pT->droidType;
+	auto w = NETbeginEncode(NETgameQueue(localControllerSlot()), GAME_TEMPLATE);
+	NETuint8_t(w, playerByte);
+	NETwzstring(w, pT->name);
+	NETuint32_t(w, pT->multiPlayerID);
+	NETint32_t(w, droidType);
+	NETuint8_t(w, pT->asParts[COMP_BODY]);
+	NETuint8_t(w, pT->asParts[COMP_BRAIN]);
+	NETuint8_t(w, pT->asParts[COMP_PROPULSION]);
+	NETuint8_t(w, pT->asParts[COMP_REPAIRUNIT]);
+	NETuint8_t(w, pT->asParts[COMP_ECM]);
+	NETuint8_t(w, pT->asParts[COMP_SENSOR]);
+	NETuint8_t(w, pT->asParts[COMP_CONSTRUCT]);
+	NETint8_t(w, pT->numWeaps);
+	for (int i = 0; i < pT->numWeaps; i++)
+	{
+		NETuint32_t(w, pT->asWeaps[i]);
+	}
+	NETend(w);
+}
+
+void sendTemplateDestroy(uint32_t multiPlayerID, int player)
+{
+	ASSERT_OR_RETURN(, player >= 0 && player < MAX_PLAYERS, "Invalid player");
+	if (!isCoopGame())
+	{
+		return;
+	}
+
+	uint8_t playerByte = player;
+	auto w = NETbeginEncode(NETgameQueue(localControllerSlot()), GAME_TEMPLATEDEST);
+	NETuint8_t(w, playerByte);
+	NETuint32_t(w, multiPlayerID);
+	NETend(w);
+}
+
+void recvTemplateUpdate(NETQUEUE queue)
+{
+	uint8_t player = 0;
+	int32_t droidType = 0;
+	WzString name;
+	DROID_TEMPLATE t;
+
+	auto r = NETbeginDecode(queue, GAME_TEMPLATE);
+	NETuint8_t(r, player);
+	NETwzstring(r, name);
+	NETuint32_t(r, t.multiPlayerID);
+	NETint32_t(r, droidType);
+	NETuint8_t(r, t.asParts[COMP_BODY]);
+	NETuint8_t(r, t.asParts[COMP_BRAIN]);
+	NETuint8_t(r, t.asParts[COMP_PROPULSION]);
+	NETuint8_t(r, t.asParts[COMP_REPAIRUNIT]);
+	NETuint8_t(r, t.asParts[COMP_ECM]);
+	NETuint8_t(r, t.asParts[COMP_SENSOR]);
+	NETuint8_t(r, t.asParts[COMP_CONSTRUCT]);
+	NETint8_t(r, t.numWeaps);
+	const bool numWeapsValid = t.numWeaps >= 0 && t.numWeaps <= static_cast<int>(ARRAY_SIZE(t.asWeaps));
+	for (int i = 0; numWeapsValid && i < t.numWeaps; i++)
+	{
+		NETuint32_t(r, t.asWeaps[i]);
+	}
+	const bool validMessage = NETend(r);
+
+	bool weaponsValid = numWeapsValid;
+	for (int i = 0; weaponsValid && i < t.numWeaps; i++)
+	{
+		weaponsValid = t.asWeaps[i] < asWeaponStats.size();
+	}
+	if (!validMessage || !weaponsValid || player >= MAX_PLAYERS || name.toUtf8().size() > MAX_TEMPLATE_NAME_LENGTH)
+	{
+		if (recordInvalidMessage(queue.index, GAME_TEMPLATE))
+		{
+			debug(LOG_INFO, "Ignoring invalid GAME_TEMPLATE from %d (valid: %d, player: %d) - further invalid ones will not be logged", (int)queue.index, (int)validMessage, (int)player);
+		}
+		return;
+	}
+	if (!canGiveOrdersFor(queue.index, player))
+	{
+		syncDebug("Wrong player.");
+		return;
+	}
+	syncDebug("player%d,template%u", player, t.multiPlayerID);
+
+	if (queue.index == localControllerSlot())
+	{
+		return; // we added it to our own lists when we designed it
+	}
+
+	t.name = name;
+	t.droidType = static_cast<DROID_TYPE>(droidType);
+	t.enabled = true;
+	t.prefab = false;
+	t.stored = false; // the design store is a per-player file, not shared
+	t.hidden = false;
+	if (!intValidTemplate(&t, nullptr, false, player))
+	{
+		if (recordInvalidMessage(queue.index, GAME_TEMPLATE))
+		{
+			debug(LOG_INFO, "Ignoring invalid design from %d with name %s - further invalid ones will not be logged", (int)queue.index, name.toUtf8().c_str());
+		}
+		return;
+	}
+
+	copyTemplate(player, &t);
+
+	if (player == selectedPlayer)
+	{
+		// Update the design screen's list in place: nothing may be erased or reallocated, since the screen can be open
+		// and point into it (it picks up a new entry the next time it builds its list)
+		auto it = std::find_if(localTemplates.begin(), localTemplates.end(), [&t](const DROID_TEMPLATE &entry) { return entry.multiPlayerID == t.multiPlayerID; });
+		if (it != localTemplates.end())
+		{
+			*it = t;
+		}
+		else
+		{
+			localTemplates.push_back(t);
+		}
+	}
+}
+
+void recvTemplateDestroy(NETQUEUE queue)
+{
+	uint8_t player = 0;
+	uint32_t multiPlayerID = 0;
+
+	auto r = NETbeginDecode(queue, GAME_TEMPLATEDEST);
+	NETuint8_t(r, player);
+	NETuint32_t(r, multiPlayerID);
+	if (!NETend(r) || player >= MAX_PLAYERS)
+	{
+		if (recordInvalidMessage(queue.index, GAME_TEMPLATEDEST))
+		{
+			debug(LOG_INFO, "Ignoring invalid GAME_TEMPLATEDEST from %d - further invalid ones will not be logged", (int)queue.index);
+		}
+		return;
+	}
+	if (!canGiveOrdersFor(queue.index, player))
+	{
+		syncDebug("Wrong player.");
+		return;
+	}
+	syncDebug("player%d,templateDestroy%u", player, multiPlayerID);
+
+	if (queue.index == localControllerSlot())
+	{
+		return; // already removed from our own lists
+	}
+
+	// Same as deleting a design in the design screen: the game's template stays (a factory may still be building it) but is hidden
+	if (DROID_TEMPLATE *psTempl = findPlayerTemplateById(player, multiPlayerID))
+	{
+		psTempl->hidden = true;
+		psTempl->stored = false;
+	}
+	if (player == selectedPlayer)
+	{
+		for (DROID_TEMPLATE &entry : localTemplates)
+		{
+			if (entry.multiPlayerID == multiPlayerID)
+			{
+				entry.hidden = true; // hidden, not erased: the design screen may be pointing at it
+			}
+		}
+	}
 }
 
 void sendStructureInfo(const STRUCTURE *psStruct, STRUCTURE_INFO structureInfo_, const DROID_TEMPLATE *pT, const OrderSource &source)

@@ -3379,6 +3379,7 @@ void intProcessDesign(UDWORD id)
 							psGameTempl->stored = false;
 						}
 					}
+					sendTemplateDestroy(deletedId, selectedPlayer); // co-op: the other controllers drop it too
 					if (bMultiPlayer && wasStored)
 					{
 						templateStoreRemove(deletedEntry);
@@ -3875,6 +3876,7 @@ static bool saveTemplate()
 
 	// Add template to in-game template list, since localTemplates/apsTemplateList is for UI use only.
 	copyTemplate(selectedPlayer, psTempl);
+	sendTemplateUpdate(psTempl, selectedPlayer); // co-op: share the design with the other controllers of this player
 
 	// Editing a stored design changes the name and components the store is keyed on, so the old entry must go before the new one is written
 	if (bMultiPlayer)

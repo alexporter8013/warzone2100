@@ -1805,6 +1805,12 @@ bool recvMessage()
 		case GAME_STRUCTUREINFO:
 			recvStructureInfo(queue);
 			break;
+		case GAME_TEMPLATE:
+			recvTemplateUpdate(queue);
+			break;
+		case GAME_TEMPLATEDEST:
+			recvTemplateDestroy(queue);
+			break;
 		case NET_PLAYER_STATS:
 			recvMultiStats(queue);
 			break;
