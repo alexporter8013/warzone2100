@@ -36,6 +36,8 @@ bool recvDestroyFeature(NETQUEUE queue);
 bool recvPing(NETQUEUE queue);
 bool receiveInGameTextMessage(NETQUEUE queue);
 bool recvDroidDisEmbark(NETQUEUE queue);
+bool recvDroidEmbark(NETQUEUE queue);
+bool recvTransporterLaunch(NETQUEUE queue);
 bool recvColourRequest(NETQUEUE queue);
 bool recvFactionRequest(NETQUEUE queue);
 bool recvPositionRequest(NETQUEUE queue);

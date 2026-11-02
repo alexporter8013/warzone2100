@@ -1580,6 +1580,12 @@ bool recvMessage()
 			case GAME_DROIDDISEMBARK:
 				recvDroidDisEmbark(queue);           //droid has disembarked from a Transporter
 				break;
+			case GAME_DROIDEMBARK:
+				recvDroidEmbark(queue);              //droid was loaded into a Transporter (co-op campaign)
+				break;
+			case GAME_TRANSPORTERLAUNCH:
+				recvTransporterLaunch(queue);        //reinforcements are on their way (co-op campaign)
+				break;
 			case GAME_GIFT:						// an alliance gift from one player to another.
 				recvGift(queue);
 				break;

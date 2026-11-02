@@ -336,7 +336,9 @@ size_t restoreQueuedDroidInfo(const std::vector<std::vector<uint8_t>> &raw);
 void sendDroidInfo(DROID *psDroid, DroidOrder const &order, bool add, const OrderSource &source);
 
 bool sendDroidSecondary(const DROID *psDroid, SECONDARY_ORDER sec, SECONDARY_STATE state, const OrderSource &source);
-bool sendDroidDisembark(const DROID *psTransporter, DROID const *psDroid, const OrderSource &source);
+bool sendDroidDisembark(const DROID *psTransporter, DROID const *psDroid, const OrderSource &source, bool offWorld = false);
+bool sendDroidEmbark(const DROID *psTransporter, DROID const *psDroid, bool offWorld, const OrderSource &source);
+bool sendTransporterLaunch(const DROID *psTransporter, const OrderSource &source);
 
 // Startup. mulitopt
 bool multiShutdown();

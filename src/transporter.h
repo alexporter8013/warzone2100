@@ -52,6 +52,12 @@ void intProcessTransporter(UDWORD id);
 
 /*Adds a droid to the transporter, removing it from the world*/
 void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd);
+/** Loads a droid on behalf of a message from the transporter interface, where `offWorld` is that interface's mode on the sender (co-op campaign) */
+void transporterEmbarkDroid(DROID *psTransporter, DROID *psDroidToAdd, bool offWorld);
+/** Same for unloading a droid (co-op campaign) */
+void transporterDisembarkDroid(DROID *psTransporter, DROID *psDroid, bool offWorld);
+/** Sends the transporter in with the reinforcements it carries; every peer does this at the same game time in a co-op campaign */
+void transporterLaunchReinforcements(DROID *psTransporter);
 void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode);
 /*check to see if the droid can fit on the Transporter - return true if fits*/
 bool checkTransporterSpace(DROID const *psTransporter, DROID const *psAssigned, bool mayFlash = true);

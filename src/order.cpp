@@ -1566,6 +1566,8 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	case DORDER_TRANSPORTOUT:
 		// tell a (transporter) droid to leave home base for the offworld mission
 		psDroid->order = *psOrder;
+		// (every peer runs this at the same game time; the launch button only sets it where it was clicked)
+		transporterSetLaunchTime(gameTime);
 		actionDroid(psDroid, DACTION_TRANSPORTOUT, psOrder->pos.x, psOrder->pos.y);
 		break;
 	case DORDER_TRANSPORTRETURN:

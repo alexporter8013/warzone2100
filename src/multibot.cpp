@@ -45,6 +45,7 @@
 #include "mapgrid.h"
 #include "multirecv.h"
 #include "transporter.h"
+#include "mission.h"
 #include "game_world.h"
 #include "multibot_serde.h"
 #include "ordersource.h"
@@ -117,7 +118,7 @@ bool sendDroidSecondary(const DROID *psDroid, SECONDARY_ORDER sec, SECONDARY_STA
  *
  *  \sa recvDroidDisEmbark()
  */
-bool sendDroidDisembark(const DROID *psTransporter, DROID const *psDroid, const OrderSource &source)
+bool sendDroidDisembark(const DROID *psTransporter, DROID const *psDroid, const OrderSource &source, bool offWorld)
 {
 	if (!bMultiMessages)
 	{
@@ -140,8 +141,82 @@ bool sendDroidDisembark(const DROID *psTransporter, DROID const *psDroid, const 
 	NETuint32_t(w, player);
 	NETuint32_t(w, droidId);
 	NETuint32_t(w, transportId);
+	if (isCoopGame())
+	{
+		// the transporter interface of a co-op campaign also works on the away map's lists while the squad is off world
+		uint8_t offWorldByte = offWorld ? 1 : 0;
+		NETuint8_t(w, offWorldByte);
+	}
 
 	return NETend(w);
+}
+
+bool sendDroidEmbark(const DROID *psTransporter, DROID const *psDroid, bool offWorld, const OrderSource &source)
+{
+	if (!bMultiMessages)
+	{
+		return true;
+	}
+
+	if (!orderSourcePermitsPlayerAction(psDroid->player, source))
+	{
+		orderProvenanceRecord(psDroid->player, source.origin(), true);
+		debug(LOG_NET, "Invalid embark for player %u from %s", psDroid->player, source.toDescription().c_str());
+		return false;
+	}
+	orderProvenanceRecord(psDroid->player, source.origin(), false);
+
+	auto w = NETbeginEncode(NETgameQueue(realSelectedPlayer), GAME_DROIDEMBARK);
+	uint32_t player = psTransporter->player;
+	uint32_t droidId = psDroid->id;
+	uint32_t transportId = psTransporter->id;
+	uint8_t offWorldByte = offWorld ? 1 : 0;
+
+	NETuint32_t(w, player);
+	NETuint32_t(w, droidId);
+	NETuint32_t(w, transportId);
+	NETuint8_t(w, offWorldByte);
+
+	return NETend(w);
+}
+
+/** Receive info about a droid that is being loaded into a transporter from its interface (co-op campaign)
+ */
+bool recvDroidEmbark(NETQUEUE queue)
+{
+	auto r = NETbeginDecode(queue, GAME_DROIDEMBARK);
+	uint32_t player;
+	uint32_t droidID;
+	uint32_t transporterID;
+	uint8_t offWorldByte;
+
+	NETuint32_t(r, player);
+	NETuint32_t(r, droidID);
+	NETuint32_t(r, transporterID);
+	NETuint8_t(r, offWorldByte);
+
+	const bool validMessage = NETend(r) && isCoopGame() && player < MAX_PLAYERS && canGiveOrdersFor(queue.index, player);
+	if (!validMessage)
+	{
+		if (recordInvalidMessage(queue.index, GAME_DROIDEMBARK))
+		{
+			debug(LOG_INFO, "Ignoring invalid GAME_DROIDEMBARK from %d - further ones will not be logged", (int)queue.index);
+		}
+		return false;
+	}
+
+	// the transporter interface works on the away map's lists while the squad is off world
+	const bool offWorld = offWorldByte != 0;
+	const WorldObjectState &objects = offWorld ? mission.gameWorld.objects : gameWorld.objects;
+	DROID *psTransporterDroid = IdToDroid(objects, transporterID, player);
+	DROID *psDroid = IdToDroid(objects, droidID, player);
+	if (!psTransporterDroid || !psDroid || !psTransporterDroid->isTransporter() || psDroid == psTransporterDroid)
+	{
+		syncDebug("Embark of droid %u on transporter %u of player %u not possible.", droidID, transporterID, player);
+		return false;
+	}
+	transporterEmbarkDroid(psTransporterDroid, psDroid, offWorld);
+	return true;
 }
 
 /** Receive info about a droid that is being unloaded from a transporter
@@ -159,11 +234,17 @@ bool recvDroidDisEmbark(NETQUEUE queue)
 		NETuint32_t(r, player);
 		NETuint32_t(r, droidID);
 		NETuint32_t(r, transporterID);
+		uint8_t offWorldByte = 0;
+		if (isCoopGame())
+		{
+			NETuint8_t(r, offWorldByte);
+		}
+		const bool offWorld = offWorldByte != 0;
 
 		bool validMessage = NETend(r);
 
 		// find the transporter first
-		psTransporterDroid = validMessage ? IdToDroid(gameWorld.objects, transporterID, player) : nullptr;
+		psTransporterDroid = validMessage ? IdToDroid(offWorld ? mission.gameWorld.objects : gameWorld.objects, transporterID, player) : nullptr;
 		if (validMessage && !psTransporterDroid)
 		{
 			// Possible it already died
@@ -200,8 +281,66 @@ bool recvDroidDisEmbark(NETQUEUE queue)
 			return false;
 		}
 
-		transporterRemoveDroid(psTransporterDroid, psFoundDroid, ModeImmediate);
+		if (isCoopGame())
+		{
+			transporterDisembarkDroid(psTransporterDroid, psFoundDroid, offWorld);
+		}
+		else
+		{
+			transporterRemoveDroid(psTransporterDroid, psFoundDroid, ModeImmediate);
+		}
 	}
+	return true;
+}
+
+bool sendTransporterLaunch(const DROID *psTransporter, const OrderSource &source)
+{
+	if (!bMultiMessages)
+	{
+		return true;
+	}
+
+	if (!orderSourcePermitsPlayerAction(psTransporter->player, source))
+	{
+		orderProvenanceRecord(psTransporter->player, source.origin(), true);
+		debug(LOG_NET, "Invalid transporter launch for player %u from %s", psTransporter->player, source.toDescription().c_str());
+		return false;
+	}
+	orderProvenanceRecord(psTransporter->player, source.origin(), false);
+
+	auto w = NETbeginEncode(NETgameQueue(realSelectedPlayer), GAME_TRANSPORTERLAUNCH);
+	uint32_t player = psTransporter->player;
+	uint32_t transportId = psTransporter->id;
+
+	NETuint32_t(w, player);
+	NETuint32_t(w, transportId);
+
+	return NETend(w);
+}
+
+/** Receive the launch of a transporter that flies in reinforcements (co-op campaign); it waits at the home base
+ *  meanwhile, which is the lists of the mission while the squad is off world
+ */
+bool recvTransporterLaunch(NETQUEUE queue)
+{
+	auto r = NETbeginDecode(queue, GAME_TRANSPORTERLAUNCH);
+	uint32_t player;
+	uint32_t transporterID;
+
+	NETuint32_t(r, player);
+	NETuint32_t(r, transporterID);
+
+	const bool validMessage = NETend(r) && isCoopGame() && player < MAX_PLAYERS && canGiveOrdersFor(queue.index, player);
+	DROID *psTransporterDroid = validMessage ? IdToDroid(mission.gameWorld.objects, transporterID, player) : nullptr;
+	if (!psTransporterDroid || !psTransporterDroid->isTransporter())
+	{
+		if (recordInvalidMessage(queue.index, GAME_TRANSPORTERLAUNCH))
+		{
+			debug(LOG_INFO, "Ignoring invalid GAME_TRANSPORTERLAUNCH from %d (transporter %u) - further ones will not be logged", (int)queue.index, transporterID);
+		}
+		return false;
+	}
+	transporterLaunchReinforcements(psTransporterDroid);
 	return true;
 }
 

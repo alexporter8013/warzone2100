@@ -942,7 +942,7 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 
 	if (bMultiMessages && mode == ModeQueue)
 	{
-		if (sendDroidDisembark(psTransport, psDroid, currentOrderSource()))
+		if (sendDroidDisembark(psTransport, psDroid, currentOrderSource(), onMission))
 		{
 			psDroid->selected = true;  // Remove from interface.
 		}
@@ -1047,8 +1047,24 @@ static void intTransporterAddDroid(UDWORD id)
 	}
 	if (droidIt != transIntDroidList->end())
 	{
-		transporterAddDroid(psCurrTransporter, *droidIt);
+		if (isCoopGame() && bMultiMessages)
+		{
+			// every peer loads it, at the same game time
+			sendDroidEmbark(psCurrTransporter, *droidIt, onMission, currentOrderSource());
+		}
+		else
+		{
+			transporterAddDroid(psCurrTransporter, *droidIt);
+		}
 	}
+}
+
+void transporterEmbarkDroid(DROID *psTransporter, DROID *psDroidToAdd, bool offWorld)
+{
+	const bool previousMode = onMission;
+	onMission = offWorld;
+	transporterAddDroid(psTransporter, psDroidToAdd);
+	onMission = previousMode;
 }
 
 /*Adds a droid to the transporter, removing it from the world */
@@ -1279,14 +1295,34 @@ bool launchTransporter(DROID *psTransporter)
 			return false;
 		}
 
-		orderDroid(psTransporter, DORDER_TRANSPORTIN, ModeImmediate);
-		/* set action transporter waits for timer */
-		actionDroid(psTransporter, DACTION_TRANSPORTWAITTOFLYIN);
-
-		missionSetReinforcementTime(gameTime);
+		if (isCoopGame() && bMultiMessages)
+		{
+			sendTransporterLaunch(psTransporter, currentOrderSource());
+		}
+		else
+		{
+			transporterLaunchReinforcements(psTransporter);
+		}
 	}
 
 	return true;
+}
+
+void transporterLaunchReinforcements(DROID *psTransporter)
+{
+	orderDroid(psTransporter, DORDER_TRANSPORTIN, ModeImmediate);
+	/* set action transporter waits for timer */
+	actionDroid(psTransporter, DACTION_TRANSPORTWAITTOFLYIN);
+
+	missionSetReinforcementTime(gameTime);
+}
+
+void transporterDisembarkDroid(DROID *psTransporter, DROID *psDroid, bool offWorld)
+{
+	const bool previousMode = onMission;
+	onMission = offWorld;
+	transporterRemoveDroid(psTransporter, psDroid, ModeImmediate);
+	onMission = previousMode;
 }
 
 #define	TRANSPORTOUT_TIME	4*GAME_TICKS_PER_SEC
