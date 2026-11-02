@@ -129,6 +129,7 @@ struct VIDEO_TIME_SKIP_STATE
 {
 	std::chrono::steady_clock::time_point begin;
 	bool canSkip;
+	bool mouseWentDown;	// a release only skips a click that began during the video, not the one that started the game
 };
 
 //holds which pause is valid at any one time
@@ -170,6 +171,7 @@ static void resetVideoSkipStates()
 {
 	videoTimeSkipState.begin = std::chrono::steady_clock::now();
 	videoTimeSkipState.canSkip = false;
+	videoTimeSkipState.mouseWentDown = false;
 }
 
 // A save from the in-game save menu, at the next safe point (see gamestate_capture.h):
@@ -862,8 +864,13 @@ void videoLoop()
 	}
 
 	// should we stop playing?
-	if (videoFinished || (videoTimeSkipState.canSkip && (keyPressed(KEY_ESC) || mouseReleased(MOUSE_LMB))))
+	if (mousePressed(MOUSE_LMB))
 	{
+		videoTimeSkipState.mouseWentDown = true;
+	}
+	if (videoFinished || (videoTimeSkipState.canSkip && (keyPressed(KEY_ESC) || (videoTimeSkipState.mouseWentDown && mouseReleased(MOUSE_LMB)))))
+	{
+		debug(LOG_INFO, "Video stopping (finished: %d, skip allowed: %d, esc: %d, click: %d)", (int)videoFinished, (int)videoTimeSkipState.canSkip, (int)keyPressed(KEY_ESC), (int)mouseReleased(MOUSE_LMB));
 		seq_StopFullScreenVideo();
 
 		//set the next video off - if any
