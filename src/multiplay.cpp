@@ -879,6 +879,16 @@ bool isHumanPlayer(int player)
 	return NetPlay.players[player].allocated;
 }
 
+bool isHumanGamePlayer(int player)
+{
+	if (isCoopGame())
+	{
+		// every human controls the one shared player; the other slots' numbers are enemy factions
+		return player == COOP_CAMPAIGN_PLAYER;
+	}
+	return isHumanPlayer(player);
+}
+
 // Clear player name data after game quit.
 void clearPlayerName(unsigned int player)
 {
@@ -906,6 +916,18 @@ int whosResponsible(int player)
 //returns true if selected player is responsible for 'player'
 bool myResponsibility(int player)
 {
+	if (isCoopGame())
+	{
+		// `player` is a game player here, not a connection slot. The slot numbers above the shared player are also the
+		// numbers of the enemy factions, so comparing against whosResponsible() would hand the enemy faction that shares
+		// a number with a connected client (e.g. faction 1 and the second human) to that client. Every faction other
+		// than the shared one is the host's, like the AIs of a skirmish.
+		if (player == COOP_CAMPAIGN_PLAYER)
+		{
+			return coopControlsPlayer(realSelectedPlayer, player);
+		}
+		return NetPlay.isHost;
+	}
 	return (whosResponsible(player) == selectedPlayer || whosResponsible(player) == realSelectedPlayer);
 }
 
@@ -919,7 +941,46 @@ bool canGiveOrdersFor(int player, int playerInQuestion)
 {
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	return playerInQuestion >= 0 && playerInQuestion < MAX_PLAYERS &&
-	       (player == playerInQuestion || responsibleFor(player, playerInQuestion) || dbgInputManager.debugMappingsAllowed());
+	       (player == playerInQuestion || responsibleFor(player, playerInQuestion) || coopControlsPlayer(player, playerInQuestion) || coopHostControlsFaction(player, playerInQuestion) || dbgInputManager.debugMappingsAllowed());
+}
+
+bool coopHostControlsFaction(int slot, int player)
+{
+	return isCoopGame() && player != COOP_CAMPAIGN_PLAYER && slot == NetPlay.hostPlayer;
+}
+
+bool isCampaignGame()
+{
+	// A campaign level, played alone or with others. (Outside a multiplayer session this is always a campaign,
+	// whatever `game.type` was left at.)
+	return !bMultiPlayer || game.type == LEVEL_TYPE::CAMPAIGN;
+}
+
+bool isNetworkedGame()
+{
+	return bMultiPlayer && NetPlay.bComms;
+}
+
+bool isCoopGame()
+{
+	return isCampaignGame() && isNetworkedGame();
+}
+
+bool coopControlsPlayer(int slot, int player)
+{
+	return isCoopGame() && player == COOP_CAMPAIGN_PLAYER
+	       && slot >= 0 && slot < game.maxPlayers
+	       && NetPlay.players[slot].allocated && !NetPlay.players[slot].isSpectator;
+}
+
+bool mySlotResponsibility(int slot)
+{
+	if (isCoopGame())
+	{
+		// selectedPlayer is the shared game player on every client, so it cannot identify our own queue
+		return whosResponsible(slot) == realSelectedPlayer;
+	}
+	return myResponsibility(slot);
 }
 
 int scavengerSlot()

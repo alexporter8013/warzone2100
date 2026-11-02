@@ -259,11 +259,21 @@ bool setPlayerName(int player, const char *sName);
 void clearPlayerName(unsigned int player);
 const char *getPlayerColourName(int player);
 bool isHumanPlayer(int player);				//to tell if the player is a computer or not.
+bool isHumanGamePlayer(int player);			// is this game player (faction) human-controlled? isHumanPlayer() asks about a connection slot, which in a co-op campaign is not a faction
 bool myResponsibility(int player);
 bool responsibleFor(int player, int playerinquestion);
 int whosResponsible(int player);
 bool canGiveOrdersFor(int player, int playerInQuestion);
-int scavengerSlot();    // Returns the player number that scavengers would have if they were enabled.
+
+// Co-op campaign: every human connection slot controls the same game player
+static constexpr int COOP_CAMPAIGN_PLAYER = 0;
+bool isCampaignGame();							// campaign rules apply, played alone or co-op (difficulty, tweak options, transporters, mission flow...)
+bool isNetworkedGame();							// game messages go over the network (multiplayer, or a co-op campaign)
+bool isCoopGame();								// a networked campaign: isCampaignGame() && isNetworkedGame(), one shared player
+bool coopControlsPlayer(int slot, int player);	// is connection `slot` a controller of game `player` through co-op sharing?
+bool coopHostControlsFaction(int slot, int player);	// is `slot` the host, and `player` one of the factions it runs for the others (enemies, scavengers)?
+bool mySlotResponsibility(int slot);			// do we send on the game queue of connection `slot`? (as opposed to acting for a game player)
+int scavengerSlot();   // Returns the player number that scavengers would have if they were enabled.
 int scavengerPlayer();  // Returns the player number that the scavengers have, or -1 if disabled.
 Vector3i cameraToHome(UDWORD player, bool scroll, bool fromSave);
 

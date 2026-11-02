@@ -54,8 +54,17 @@
 #define REALCONCAT(x, y) x ## y
 #define CONCAT(x, y) REALCONCAT(x, y)
 
-extern uint32_t selectedPlayer;      ///< The player number corresponding to this client.
-extern uint32_t realSelectedPlayer;  ///< The player number corresponding to this client (same as selectedPlayer, unless changing players in the debug menu).
+// Two different identities are tracked for the local client:
+//  - the *player* (faction / team): who owns droids and structures, what we see, which scripts we run.
+//  - the *controller* (connection slot): who sends and receives network messages and may give orders.
+// They are the same number, except in debug "view as" mode and in co-op campaigns, where every
+// controller plays the one shared player.
+// World, UI and scripting code uses the player; networking code (queues, game time, pings, votes, kicks,
+// "who sent this") uses the controller. Prefer the accessors below in new code.
+extern uint32_t selectedPlayer;      ///< The player the local client plays (see above).
+extern uint32_t realSelectedPlayer;  ///< The local client's controller / connection slot (see above).
+inline uint32_t localPlayer() { return selectedPlayer; }
+inline uint32_t localControllerSlot() { return realSelectedPlayer; }
 #define MAX_PLAYERS         11                 ///< Maximum number of players in the game.
 #define MAX_PLAYERS_IN_GUI  (MAX_PLAYERS - 1)  ///< One player reserved for scavengers.
 #define PLAYER_FEATURE      (MAX_PLAYERS + 1)
