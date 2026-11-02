@@ -1713,7 +1713,7 @@ void WzQuickChatSection::addChatOption(WzQuickChatMessage message, ShouldEnableO
 		ASSERT_OR_RETURN(, psStrongSection != nullptr, "No valid section?");
 		auto psParent = std::dynamic_pointer_cast<WzQuickChatPanel>(psStrongSection->parent());
 		ASSERT_OR_RETURN(, psParent != nullptr, "No valid parent?");
-		psParent->sendQuickChat(message, selectedPlayer);
+		psParent->sendQuickChat(message, localControllerSlot());
 	});
 	messagesList->addWidgetToLayout(messageButton);
 }
@@ -2004,7 +2004,7 @@ bool WzQuickChatPanel::handleTabPress()
 
 void WzQuickChatPanel::sendQuickChat(WzQuickChatMessage message, uint32_t fromPlayer)
 {
-	::sendQuickChat(message, selectedPlayer, getTargeting());
+	::sendQuickChat(message, localControllerSlot(), getTargeting());
 	auto psParent = std::dynamic_pointer_cast<WzQuickChatForm>(parent());
 	ASSERT_OR_RETURN(, psParent != nullptr, "No parent?");
 	if (psParent->onQuickChatSent)
@@ -3414,7 +3414,8 @@ bool shouldHideQuickChatMessageFromLocalDisplay(WzQuickChatMessage message, cons
 
 void sendQuickChat(WzQuickChatMessage message, uint32_t fromPlayer, WzQuickChatTargeting targeting, optional<WzQuickChatMessageData> messageData /*= nullopt*/)
 {
-	ASSERT_OR_RETURN(, myResponsibility(fromPlayer), "We are not responsible for player: %" PRIu32, fromPlayer);
+	// (the senders and recipients here are connection slots, which in a co-op campaign are not the game players)
+	ASSERT_OR_RETURN(, mySlotResponsibility(fromPlayer), "We are not responsible for player: %" PRIu32, fromPlayer);
 	ASSERT_OR_RETURN(, quickChatMessageExpectsExtraData(message) == messageData.has_value(), "Message [%d] unexpectedly %s", static_cast<int>(message), messageData.has_value() ? "has message data" : "lacks message data");
 
 	bool internalMessage = isInternalMessage(message);
@@ -3512,10 +3513,10 @@ void sendQuickChat(WzQuickChatMessage message, uint32_t fromPlayer, WzQuickChatT
 
 	for (auto recipient : recipients)
 	{
-		if (myResponsibility(recipient))
+		if (mySlotResponsibility(recipient))
 		{
 			// don't bother sending a net message
-			if (recipient == selectedPlayer)
+			if (recipient == localControllerSlot())
 			{
 				// Targetted at us - Output to console
 				addQuickChatMessageToConsole(message, fromPlayer, targeting, messageData);
@@ -3577,7 +3578,7 @@ void sendQuickChat(WzQuickChatMessage message, uint32_t fromPlayer, WzQuickChatT
 		NETend(wref);
 	}
 
-	if (fromPlayer == selectedPlayer && (!recipients.empty() || !isInGame) && !shouldHideQuickChatMessageFromLocalDisplay(message, targeting))
+	if (fromPlayer == localControllerSlot() && (!recipients.empty() || !isInGame) && !shouldHideQuickChatMessageFromLocalDisplay(message, targeting))
 	{
 		if (isInGame)
 		{
@@ -3640,7 +3641,7 @@ bool shouldProcessQuickChatMessage(const NETQUEUE& queue, bool isInGame, WzQuick
 		return false;
 	}
 
-	if (!myResponsibility(recipient))
+	if (!mySlotResponsibility(recipient))
 	{
 		return false;
 	}
@@ -3751,7 +3752,7 @@ bool recvQuickChat(NETQUEUE queue)
 		return false;
 	}
 
-	if (isRateLimitedMessage(msgEnumVal) && recipient == selectedPlayer)
+	if (isRateLimitedMessage(msgEnumVal) && recipient == localControllerSlot())
 	{
 		recordPlayerMessageSent(sender);
 	}

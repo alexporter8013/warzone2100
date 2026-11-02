@@ -620,7 +620,7 @@ static size_t NET_fillBuffer(IClientConnection** pSocket, IConnectionPollGroup* 
 		if (readResult.error() == std::errc::timed_out || readResult.error() == std::errc::connection_reset)
 		{
 			debug(LOG_NET, "Connection closed from the other side");
-			NETlogEntry("Connection closed from the other side..", SYNC_FLAG, selectedPlayer);
+			NETlogEntry("Connection closed from the other side..", SYNC_FLAG, localControllerSlot());
 		}
 		else
 		{
@@ -636,7 +636,7 @@ static size_t NET_fillBuffer(IClientConnection** pSocket, IConnectionPollGroup* 
 		if (bsocket == socket)
 		{
 			debug(LOG_NET, "Host connection was lost!");
-			NETlogEntry("Host connection was lost!", SYNC_FLAG, selectedPlayer);
+			NETlogEntry("Host connection was lost!", SYNC_FLAG, localControllerSlot());
 			//Game is pretty much over --should just end everything when HOST dies.
 			NETclientHandleHostDisconnected();
 			bsocket = nullptr;
@@ -1253,7 +1253,7 @@ bool NETchangePlayerName(UDWORD index, char *newName)
 	else
 	{
 		ASSERT_OR_RETURN(false, index <= static_cast<uint32_t>(std::numeric_limits<uint8_t>::max()), "index (%" PRIu32 ") exceeds supported bounds", index);
-		ASSERT_OR_RETURN(false, index == selectedPlayer, "Clients can only change their own name!");
+		ASSERT_OR_RETURN(false, index == realSelectedPlayer, "Clients can only change their own name!");
 		uint8_t player = static_cast<uint8_t>(index);
 		WzString newNameStr = NetPlay.players[index].name;
 		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_PLAYERNAME_CHANGEREQUEST);
@@ -1460,7 +1460,7 @@ void NETinitPortMapping()
 int NETinit(ConnectionProviderType pt)
 {
 	debug(LOG_NET, "NETinit");
-	NETlogEntry("NETinit!", SYNC_FLAG, selectedPlayer);
+	NETlogEntry("NETinit!", SYNC_FLAG, localControllerSlot());
 	NET_InitPlayers(true, true);
 
 	ConnectionProviderRegistry::Instance().Register(pt);
@@ -1499,7 +1499,7 @@ int NETinit(ConnectionProviderType pt)
 int NETshutdown()
 {
 	debug(LOG_NET, "NETshutdown");
-	NETlogEntry("NETshutdown", SYNC_FLAG, selectedPlayer);
+	NETlogEntry("NETshutdown", SYNC_FLAG, localControllerSlot());
 	if (NetPlay.bComms && NetPlay.isPortMappingEnabled)
 	{
 		NETremRedirects();
@@ -1777,7 +1777,7 @@ bool NETsend(NETQUEUE queue, NetMessage const& message)
 	else
 	{
 		// We are a client and can't send the data directly, ask the host to send the data to the player.
-		uint8_t sender = selectedPlayer;
+		uint8_t sender = realSelectedPlayer;
 		auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_SEND_TO_PLAYER);
 		NETuint8_t(w, sender);
 		NETuint8_t(w, player);
@@ -2270,7 +2270,7 @@ static inline bool NETFilterMessageWhileSwappingPlayer(uint8_t sender, uint8_t t
 		{
 			WzQuickChatTargeting targeting;
 			targeting.specificPlayers.insert(sender);
-			sendQuickChat(WzQuickChatMessage::INTERNAL_MSG_DELIVERY_FAILURE_TRY_AGAIN, selectedPlayer, targeting);
+			sendQuickChat(WzQuickChatMessage::INTERNAL_MSG_DELIVERY_FAILURE_TRY_AGAIN, localControllerSlot(), targeting);
 			return true; // filter / ignore
 		}
 	case NET_VOTE:
@@ -2492,10 +2492,10 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t *type)
 				debug(LOG_ERROR, "Bad NET_SEND_TO_PLAYER.");
 				break;
 			}
-			if ((receiver == selectedPlayer || receiver == NET_ALL_PLAYERS) && playerQueue.index == NetPlay.hostPlayer)
+			if ((receiver == realSelectedPlayer || receiver == NET_ALL_PLAYERS) && playerQueue.index == NetPlay.hostPlayer)
 			{
 				// Message was sent to us via the host.
-				if (sender != selectedPlayer)  // Make sure host didn't send us our own broadcast messages, which shouldn't happen anyway.
+				if (sender != realSelectedPlayer)  // Make sure host didn't send us our own broadcast messages, which shouldn't happen anyway.
 				{
 					NETlogPacket(message->type(), static_cast<uint32_t>(message->rawData().size()), true);
 					if (NetPlay.isHost)
@@ -2613,7 +2613,7 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t *type)
 					break;
 				}
 
-				debug(LOG_INFO, "Report this: Player %d sent us message type (%d) addressed to %d from %d. We are %d.", (int)playerQueue.index, (int)message->type(), (int)receiver, (int)sender, selectedPlayer);
+				debug(LOG_INFO, "Report this: Player %d sent us message type (%d) addressed to %d from %d. We are %d.", (int)playerQueue.index, (int)message->type(), (int)receiver, (int)sender, localControllerSlot());
 			}
 
 			break;
@@ -2645,7 +2645,7 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t *type)
 			NETuint8_t(r, player);
 			NETuint32_t(r, num);
 			bool isSentByCorrectClient = responsibleFor(playerQueue.index, player);
-			isSentByCorrectClient = isSentByCorrectClient || (playerQueue.index == NetPlay.hostPlayer && playerQueue.index != selectedPlayer);  // Let host spoof other people's NET_SHARE_GAME_QUEUE messages, but not our own. This allows the host to spoof a GAME_PLAYER_LEFT message (but spoofing any message when the player is still there will fail with desynch).
+			isSentByCorrectClient = isSentByCorrectClient || (playerQueue.index == NetPlay.hostPlayer && playerQueue.index != realSelectedPlayer);  // Let host spoof other people's NET_SHARE_GAME_QUEUE messages, but not our own. This allows the host to spoof a GAME_PLAYER_LEFT message (but spoofing any message when the player is still there will fail with desynch).
 			if (!isSentByCorrectClient || player >= MAX_CONNECTED_PLAYERS)
 			{
 				NETend(r);
@@ -2899,7 +2899,7 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t *type)
 			}
 			else if (!error)
 			{
-				if (index == selectedPlayer)
+				if (index == realSelectedPlayer)
 				{
 					handleAutoReadyRequest();
 				}
@@ -3535,7 +3535,7 @@ bool NETrecvFile(NETQUEUE queue)
 
 unsigned NETgetDownloadProgress(unsigned player)
 {
-	std::vector<WZFile> const *files = player == selectedPlayer ?
+	std::vector<WZFile> const *files = player == realSelectedPlayer ?
 		&DownloadingWzFiles :  // Check our own download progress.
 		NetPlay.players[player].wzFiles.get();  // Check their download progress (currently only works if we are the host).
 
@@ -4907,7 +4907,7 @@ static void NETEnableAllowJoining()
 	// this game session is available to join to.
 	allow_joining = true;
 
-	debug(LOG_NET, "Hosting a server. We are player %d.", selectedPlayer);
+	debug(LOG_NET, "Hosting a server. We are player %d.", localControllerSlot());
 }
 
 bool NEThostGame(const char *SessionName, const char *PlayerName, const EcKey& playerIdentity, bool spectatorHost,

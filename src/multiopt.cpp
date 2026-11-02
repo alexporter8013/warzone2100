@@ -549,7 +549,7 @@ bool sendLeavingMsg()
 	auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_PLAYER_LEAVING);
 	{
 		bool host = NetPlay.isHost;
-		uint32_t id = selectedPlayer;
+		uint32_t id = realSelectedPlayer;
 
 		NETuint32_t(w, id);
 		NETbool(w, host);
@@ -607,7 +607,7 @@ static bool gameInit(bool fromSnapshot)
 	// Only the local player's spectator interface needs setting up again.
 	if (fromSnapshot)
 	{
-		if (selectedPlayer < NetPlay.players.size() && NetPlay.players[selectedPlayer].isSpectator)
+		if (localControllerSlot() < NetPlay.players.size() && NetPlay.players[localControllerSlot()].isSpectator)
 		{
 			setUpLocalSpectatorInterface();
 			setPlayerHasLost(true); // set this flag to true so we don't accumulate loss statistics
@@ -634,7 +634,7 @@ static bool gameInit(bool fromSnapshot)
 		{
 			// player is starting as a spectator
 			makePlayerSpectator(i, true, true);
-			if (i == selectedPlayer)
+			if (i == localControllerSlot())
 			{
 				setPlayerHasLost(true); // set this flag to true so we don't accumulate loss statistics
 			}
@@ -658,14 +658,14 @@ void playerResponding()
 	debug(LOG_INFO, "playerResponding: this is controller slot %u (shared player %u, host slot %u)", realSelectedPlayer, selectedPlayer, NetPlay.hostPlayer);
 	ingame.startTime = std::chrono::steady_clock::now();
 	ingame.localJoiningInProgress = false; // No longer joining.
-	if (selectedPlayer < MAX_CONNECTED_PLAYERS)
+	if (localControllerSlot() < MAX_CONNECTED_PLAYERS)
 	{
-		ingame.JoiningInProgress[selectedPlayer] = false;
+		ingame.JoiningInProgress[localControllerSlot()] = false;
 	}
 
 	// Tell the world we're here
 	auto w = NETbeginEncode(NETbroadcastQueue(), NET_PLAYERRESPONDING);
-	NETuint32_t(w, selectedPlayer);
+	NETuint32_t(w, realSelectedPlayer);
 	NETend(w);
 }
 
@@ -709,7 +709,7 @@ bool multiStartScreenInit()
 // at the end of every game.
 bool multiGameShutdown()
 {
-	debug(LOG_NET, "%s is shutting down.", getPlayerName(selectedPlayer));
+	debug(LOG_NET, "%s is shutting down.", getPlayerName(localControllerSlot()));
 
 	{
 		const std::string provenance = orderProvenanceSummary();
@@ -723,9 +723,9 @@ bool multiGameShutdown()
 
 	sendLeavingMsg();							// say goodbye
 
-	if (selectedPlayer < MAX_CONNECTED_PLAYERS && !NETisReplay())
+	if (localControllerSlot() < MAX_CONNECTED_PLAYERS && !NETisReplay())
 	{
-		PLAYERSTATS st = getMultiStats(selectedPlayer);	// save stats
+		PLAYERSTATS st = getMultiStats(localControllerSlot());	// save stats
 
 		saveMultiStats(sPlayer, sPlayer, &st);
 	}
@@ -834,7 +834,7 @@ static void informOnHostChatPermissionChanges(const std::array<bool, MAX_CONNECT
 				// skip notices for non-human slots
 				continue;
 			}
-			if (i == selectedPlayer)
+			if (i == localControllerSlot())
 			{
 				if (GetGameMode() != GS_NORMAL)
 				{

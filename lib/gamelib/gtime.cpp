@@ -267,7 +267,7 @@ GameTimeUpdateResult gameTimeUpdate(bool mayUpdate, bool forceTryGameTickUpdate)
 		}
 
 		bool shouldDisplayWaitingStatus = true;
-		if (NetPlay.players[selectedPlayer].isSpectator && !NetPlay.isHost)
+		if (NetPlay.players[localControllerSlot()].isSpectator && !NetPlay.isHost)
 		{
 			shouldDisplayWaitingStatus = (realTime - waitingOnPlayersStartTime.value_or(0)) > MIN_WAITONPLAYERS_DISPLAYTIME_FOR_SPECTATORS;
 		}
@@ -503,7 +503,7 @@ void sendPlayerGameTime()
 
 	for (player = 0; player < MAX_CONNECTED_PLAYERS; ++player)
 	{
-		if (!myResponsibility(player) || !isHumanPlayer(player))
+		if (!mySlotResponsibility(player) || !isHumanPlayer(player))
 		{
 			continue;
 		}

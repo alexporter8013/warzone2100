@@ -502,7 +502,7 @@ bool recvMultiStats(NETQUEUE queue)
 	}
 
 	// we don't what to update ourselves, we already know our score (FIXME: rewrite setMultiStats())
-	if (!myResponsibility(playerIndex))
+	if (!mySlotResponsibility(playerIndex))
 	{
 		// Retrieve the actual stats
 		NETuint32_t(r, playerStats[playerIndex].played);
@@ -733,31 +733,31 @@ void updateMultiStatsDamage(UDWORD attacker, UDWORD defender, UDWORD inflicted)
 // update games played.
 void updateMultiStatsGames()
 {
-	if (selectedPlayer >= MAX_PLAYERS)
+	if (localControllerSlot() >= MAX_PLAYERS)
 	{
 		return;
 	}
-	++playerStats[selectedPlayer].played;
+	++playerStats[localControllerSlot()].played;
 }
 
 // games won
 void updateMultiStatsWins()
 {
-	if (selectedPlayer >= MAX_PLAYERS)
+	if (localControllerSlot() >= MAX_PLAYERS)
 	{
 		return;
 	}
-	++playerStats[selectedPlayer].wins;
+	++playerStats[localControllerSlot()].wins;
 }
 
 //games lost.
 void updateMultiStatsLoses()
 {
-	if (selectedPlayer >= MAX_PLAYERS)
+	if (localControllerSlot() >= MAX_PLAYERS)
 	{
 		return;
 	}
-	++playerStats[selectedPlayer].losses;
+	++playerStats[localControllerSlot()].losses;
 }
 
 static inline uint32_t calcObjectCost(const BASE_OBJECT *psObj)

@@ -490,7 +490,7 @@ static void sendPlayerLeft(uint32_t playerIndex)
 	ASSERT_OR_RETURN(, NetPlay.isHost, "Only host should call this.");
 
 	uint32_t forcedPlayerIndex = whosResponsible(playerIndex);
-	NETQUEUE(*netQueueType)(unsigned) = forcedPlayerIndex != selectedPlayer ? NETgameQueueForced : NETgameQueue;
+	NETQUEUE(*netQueueType)(unsigned) = forcedPlayerIndex != localControllerSlot() ? NETgameQueueForced : NETgameQueue;
 	auto w = NETbeginEncode(netQueueType(forcedPlayerIndex), GAME_PLAYER_LEFT);
 	NETuint32_t(w, playerIndex);
 	NETend(w);
@@ -502,7 +502,7 @@ static void addConsolePlayerLeftMessage(unsigned playerIndex)
 	{
 		return;
 	}
-	if (selectedPlayer != playerIndex)
+	if (localControllerSlot() != playerIndex)
 	{
 		std::string msg = astringf(_("%s has Left the Game"), getPlayerName(playerIndex));
 		addConsoleMessage(msg.c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
@@ -515,7 +515,7 @@ static void addConsolePlayerJoinMessage(unsigned playerIndex)
 	{
 		return;
 	}
-	if (selectedPlayer != playerIndex)
+	if (localControllerSlot() != playerIndex)
 	{
 		std::string msg = astringf(_("%s joined the Game"), getPlayerName(playerIndex));
 		if ((game.blindMode != BLIND_MODE::NONE) && NetPlay.isHost && (NetPlay.hostPlayer >= MAX_PLAYER_SLOTS))
@@ -845,7 +845,7 @@ void setupNewPlayer(UDWORD player)
 
 	setMultiStats(player, getMultiStats(player), true);  // get the players score
 
-	if (selectedPlayer != player)
+	if (localControllerSlot() != player)
 	{
 		char buf[255];
 		ssprintf(buf, _("%s is joining the game"), getPlayerName(player));

@@ -99,7 +99,7 @@ void InGameChatMessage::sendToHumanPlayers()
 	auto message = NetworkTextMessage(sender, formatted);
 	message.teamSpecific = toAllies && toPlayers.empty();
 
-	if (sender == selectedPlayer || shouldReceive(selectedPlayer)) {
+	if (sender == localControllerSlot() || shouldReceive(localControllerSlot())) {
 		printInGameTextMessage(message);
 	}
 
@@ -173,16 +173,16 @@ void InGameChatMessage::sendToSpectators()
 	char formatted[MAX_CONSOLE_STRING_LENGTH];
 	ssprintf(formatted, "%s (%s): %s", getPlayerName(sender), _("Spectators"), text);
 
-	if ((sender == selectedPlayer || shouldReceive(selectedPlayer)) && NetPlay.players[selectedPlayer].isSpectator) {
+	if ((sender == localControllerSlot() || shouldReceive(localControllerSlot())) && NetPlay.players[localControllerSlot()].isSpectator) {
 		auto message = NetworkTextMessage(sender, formatted);
 		printInGameTextMessage(message);
 	}
 
 	for (auto receiver: getReceivers())
 	{
-		if (isHumanPlayer(receiver) && NetPlay.players[receiver].isSpectator && receiver != selectedPlayer)
+		if (isHumanPlayer(receiver) && NetPlay.players[receiver].isSpectator && receiver != localControllerSlot())
 		{
-			ASSERT(!myResponsibility(receiver), "Should not be my responsibility...");
+			ASSERT(!mySlotResponsibility(receiver), "Should not be my responsibility...");
 			enqueueSpectatorMessage(NETnetQueue(receiver), formatted);
 		}
 	}
@@ -224,14 +224,14 @@ void InGameChatMessage::send()
 		recordPlayerMessageSent(sender);
 	}
 
-	if (NetPlay.players[selectedPlayer].isSpectator && !NetPlay.isHost)
+	if (NetPlay.players[localControllerSlot()].isSpectator && !NetPlay.isHost)
 	{
 		sendToSpectators();
 	}
 	else
 	{
 		sendToHumanPlayers();
-		if (NetPlay.isHost && NetPlay.players[selectedPlayer].isSpectator)
+		if (NetPlay.isHost && NetPlay.players[localControllerSlot()].isSpectator)
 		{
 			// spectator hosts do get to send messages visible to all players,
 			// but not AI / scripts

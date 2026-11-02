@@ -381,9 +381,9 @@ void DesyncLogOutputter::expectDesyncLog(uint32_t time)
 
 void DesyncLogOutputter::willLogLocalDesyncLog(uint32_t time)
 {
-	if (selectedPlayer < players.size())
+	if (localControllerSlot() < players.size())
 	{
-		players[selectedPlayer].setExpectDesyncLog(time);
+		players[localControllerSlot()].setExpectDesyncLog(time);
 	}
 }
 
@@ -776,9 +776,9 @@ static void dbgOutputDumpedSyncLog(uint32_t time, uint32_t player, bool partial 
 
 static void dumpLocalPlayerDebugSync(const uint8_t* buf, size_t bufLen, uint32_t time, bool syncError = true)
 {
-	playerDesyncLogOutput.write(time, selectedPlayer, buf, bufLen);
-	playerDesyncLogOutput.closeEOF(time, selectedPlayer);
-	dbgOutputDumpedSyncLog(time, selectedPlayer, false, syncError);
+	playerDesyncLogOutput.write(time, localControllerSlot(), buf, bufLen);
+	playerDesyncLogOutput.closeEOF(time, localControllerSlot());
+	dbgOutputDumpedSyncLog(time, localControllerSlot(), false, syncError);
 }
 
 static void sendDebugSync(uint8_t* buf, uint32_t bufLen, uint32_t time)
@@ -904,7 +904,7 @@ void recvDebugSync(NETQUEUE queue)
 	}
 
 	// Also dump the debug sync log for this local client (if possible & needed)
-	if (!playerDesyncLogOutput.alreadyWroteLogFor(time, selectedPlayer) && playerDesyncLogOutput.canWriteLogFor(time, selectedPlayer))
+	if (!playerDesyncLogOutput.alreadyWroteLogFor(time, localControllerSlot()) && playerDesyncLogOutput.canWriteLogFor(time, localControllerSlot()))
 	{
 		debug(LOG_INFO, "Dumping local debug sync log in response to received for gameTime: %" PRIu32, time);
 		bufLen = dumpLocalDebugSyncLogByTime(time);
@@ -939,7 +939,7 @@ void debugVerboseLogSyncIfNeeded()
 	if (bufLen > 0)
 	{
 		char fname[100];
-		ssprintf(fname, "logs/sync%u_p%u.txt", gameTime, selectedPlayer);
+		ssprintf(fname, "logs/sync%u_p%u.txt", gameTime, localControllerSlot());
 		PHYSFS_file* fp = openSaveFile(fname);
 		if (!fp)
 		{

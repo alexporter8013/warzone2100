@@ -756,7 +756,7 @@ void resetLobbyChangePlayerVote(uint32_t player)
 void sendLobbyChangeVoteData(uint8_t currentVote)
 {
 	auto w = NETbeginEncode(NETbroadcastQueue(), NET_VOTE);
-	NETuint32_t(w, selectedPlayer);
+	NETuint32_t(w, realSelectedPlayer);
 	uint8_t voteType = static_cast<uint8_t>(NetVoteType::LOBBY_SETTING_CHANGE);
 	NETuint8_t(w, voteType);
 	NETuint8_t(w, currentVote);
@@ -773,7 +773,7 @@ uint8_t getLobbyChangeVoteTotal()
 	{
 		if (isHumanPlayer(i))
 		{
-			if (selectedPlayer == i)
+			if (localControllerSlot() == i)
 			{
 				// always count the host as a "yes" vote.
 				playerVotes[i] = 1;
@@ -811,7 +811,7 @@ static bool recvLobbyChangeVote(uint32_t player, uint8_t newVote)
 void sendPlayerKickedVote(uint32_t voteID, uint8_t newVote)
 {
 	auto w = NETbeginEncode(NETbroadcastQueue(), NET_VOTE);
-	NETuint32_t(w, selectedPlayer);
+	NETuint32_t(w, realSelectedPlayer);
 	uint8_t voteType = static_cast<uint8_t>(NetVoteType::KICK_PLAYER);
 	NETuint8_t(w, voteType);
 	NETuint32_t(w, voteID);
@@ -868,11 +868,11 @@ static bool recvPlayerKickVote(uint32_t voteID, uint32_t sender, uint8_t newVote
 static void sendPlayerMultiOptPreferencesBuiltin(uint32_t playerIdx)
 {
 	ASSERT_OR_RETURN(, playerIdx < MAX_CONNECTED_PLAYERS, "Invalid player idx: %" PRIu32, playerIdx);
-	ASSERT_OR_RETURN(, whosResponsible(playerIdx) == selectedPlayer || NetPlay.isHost, "Sending unexpected player prefs: %" PRIu32, playerIdx);
+	ASSERT_OR_RETURN(, whosResponsible(playerIdx) == realSelectedPlayer || NetPlay.isHost, "Sending unexpected player prefs: %" PRIu32, playerIdx);
 	ASSERT_OR_RETURN(, GetGameMode() != GS_NORMAL, "Trying to send multiopt preferences after game started?");
 
 	auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_VOTE);
-	NETuint32_t(w, selectedPlayer);
+	NETuint32_t(w, realSelectedPlayer);
 	uint8_t voteType = static_cast<uint8_t>(NetVoteType::LOBBY_OPTION_PREFERENCES_BUILTIN);
 	NETuint8_t(w, voteType);
 	NETbuiltinPlayerPreferences(w, playerPreferences[playerIdx].getBuiltinPreferences());
@@ -1032,7 +1032,7 @@ static void setupKickVoteChoice(uint32_t voteID, uint32_t targetPlayer)
 		if (realTime - lastKickVoteForEachPlayer[targetPlayer].value() < MIN_INTERVAL_BETWEEN_PLAYER_KICK_VOTES_MS)
 		{
 			// Host is spamming kick requests - deny it automatically
-			if (targetPlayer != selectedPlayer)
+			if (targetPlayer != localControllerSlot())
 			{
 				sendPlayerKickedVote(voteID, 2);
 			}
@@ -1040,7 +1040,7 @@ static void setupKickVoteChoice(uint32_t voteID, uint32_t targetPlayer)
 		}
 	}
 
-	if (targetPlayer == selectedPlayer)
+	if (targetPlayer == localControllerSlot())
 	{
 		// The vote is for the current player - just display a local console message and return
 		addConsoleMessage(_("A vote was started to kick you from the game."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE, false);
@@ -1086,7 +1086,7 @@ static bool sendVoteRequest(NetVoteType type, uint32_t voteID = 0, uint32_t targ
 
 	//setup a vote popup for the clients
 	auto w = NETbeginEncode(NETbroadcastQueue(), NET_VOTE_REQUEST);
-	NETuint32_t(w, selectedPlayer);
+	NETuint32_t(w, realSelectedPlayer);
 	NETuint32_t(w, targetPlayer);
 	NETuint32_t(w, voteID);
 	uint8_t voteType = static_cast<uint8_t>(type);
@@ -1375,7 +1375,7 @@ bool startKickVote(uint32_t targetPlayer, optional<uint32_t> requester_player_id
 	ASSERT_HOST_ONLY(return false);
 	static uint32_t last_vote_id = 0;
 
-	auto pendingVote = PendingVoteKick(last_vote_id++, requester_player_id.value_or(selectedPlayer), targetPlayer);
+	auto pendingVote = PendingVoteKick(last_vote_id++, requester_player_id.value_or(localControllerSlot()), targetPlayer);
 	auto currentStatus = pendingVote.getKickVoteResult();
 	if (currentStatus.has_value())
 	{

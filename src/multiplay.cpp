@@ -1171,7 +1171,7 @@ static bool sendDataCheck2()
 
 	// For a player, respond to the host
 	auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_DATA_CHECK2);		// only need to send to HOST
-	NETuint32_t(w, selectedPlayer);
+	NETuint32_t(w, realSelectedPlayer);
 	NETuint32_t(w, realSelectedPlayer);
 	std::unordered_map<uint16_t, uint32_t> layers;
 	widgForEachOverlayScreen([&layers](const std::shared_ptr<W_SCREEN> &pScreen, uint16_t zOrder) -> bool {
@@ -1737,7 +1737,7 @@ bool recvMessage()
 			}
 			break;
 		case NET_VOTE_REQUEST:
-			if (!NetPlay.isHost && !NetPlay.players[selectedPlayer].isSpectator)
+			if (!NetPlay.isHost && !NetPlay.players[localControllerSlot()].isSpectator)
 			{
 				recvVoteRequest(queue);
 			}
@@ -1775,7 +1775,7 @@ bool recvMessage()
 					}
 					break;
 				}
-				else if (selectedPlayer == player_id)  // we've been told to leave.
+				else if (localControllerSlot() == player_id)  // we've been told to leave.
 				{
 					debug(LOG_INFO, "You were kicked because %s", reason);
 					displayKickReasonPopup(reason);
@@ -2313,7 +2313,7 @@ void sendInGameSystemMessage(const char *text)
 {
 	NetworkTextMessage message(SYSTEM_MESSAGE, text);
 	printInGameTextMessage(message);
-	if (NetPlay.isHost || !NetPlay.players[selectedPlayer].isSpectator || GetGameMode() != GS_NORMAL)
+	if (NetPlay.isHost || !NetPlay.players[localControllerSlot()].isSpectator || GetGameMode() != GS_NORMAL)
 	{
 		// host + players can broadcast these at any time
 		// spectators can only broadcast in-game system messages before the game has started (i.e. in lobby)
@@ -2469,7 +2469,7 @@ optional<NetworkTextMessage> decodeSpecInGameTextMessage(MessageReader& r, uint8
 		return nullopt;
 	}
 
-	if (!NetPlay.players[selectedPlayer].isSpectator)
+	if (!NetPlay.players[localControllerSlot()].isSpectator)
 	{
 		return nullopt; // ignore
 	}
@@ -2742,7 +2742,7 @@ bool recvMapFileData(NETQUEUE queue)
 
 		WzQuickChatTargeting targeting;
 		targeting.all = true;
-		sendQuickChat(WzQuickChatMessage::INTERNAL_LOBBY_NOTICE_MAP_DOWNLOADED, selectedPlayer, targeting);
+		sendQuickChat(WzQuickChatMessage::INTERNAL_LOBBY_NOTICE_MAP_DOWNLOADED, localControllerSlot(), targeting);
 
 		debug(LOG_INFO, "=== File has been received. ===");
 
@@ -3177,7 +3177,7 @@ bool makePlayerSpectator(uint32_t playerIndex, bool removeAllStructs, bool quiet
 	}
 	NetPlay.players[playerIndex].isSpectator = true; // must come before enableGodMode
 
-	if (playerIndex == selectedPlayer)
+	if (playerIndex == localControllerSlot())
 	{
 		setUpLocalSpectatorInterface();
 	}

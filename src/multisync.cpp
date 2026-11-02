@@ -87,7 +87,7 @@ bool sendScoreCheck()
 		for (i = 0; i < MAX_CONNECTED_PLAYERS; i++)
 		{
 			// Host controls AI's scores + his own...
-			if (myResponsibility(i))
+			if (mySlotResponsibility(i))
 			{
 				// Send score to everyone else
 				sendMultiStatsScoreUpdates(i);
@@ -182,7 +182,7 @@ static void sendPingReply(uint8_t player, const PingChallengeBytes& challenge)
 		return;
 	}
 	const EcKey::Key hostPublicKey = hostIdentity.toBytes(EcKey::Public);
-	uint8_t us = selectedPlayer;
+	uint8_t us = realSelectedPlayer;
 	bool isNew = false;
 
 	const auto signatureData = NETpingSignatureData(challenge.data(), PING_CHALLENGE_BYTES, player, us, NetPlay.hostPlayer, hostPublicKey);
@@ -222,7 +222,7 @@ void multiSyncSendPendingPingReplies()
 bool sendPing()
 {
 	bool			isNew = true;
-	uint8_t			player = selectedPlayer;
+	uint8_t			player = realSelectedPlayer;
 	static UDWORD	lastPing = 0;	// Last time we sent a ping
 	static UDWORD	lastav = 0;		// Last time we updated average
 
@@ -266,14 +266,14 @@ bool sendPing()
 		if (isHumanPlayer(i)
 		    && PingSend[i]
 		    && ingame.PingTimes[i]
-		    && i != selectedPlayer)
+		    && i != localControllerSlot())
 		{
 			ingame.PingTimes[i] = PING_LIMIT;
 		}
 		else if (!isHumanPlayer(i)
 		         && PingSend[i]
 		         && ingame.PingTimes[i]
-		         && i != selectedPlayer)
+		         && i != localControllerSlot())
 		{
 			ingame.PingTimes[i] = 0;
 		}
@@ -285,7 +285,7 @@ bool sendPing()
 		for (int i = 0; i < MAX_CONNECTED_PLAYERS; ++i)
 		{
 			if (isHumanPlayer(i)
-				&& i != selectedPlayer)
+				&& i != localControllerSlot())
 			{
 				pingChallenges[i] = generatePingChallenge(i);
 				pingReplyVerifyAttempts[i] = 0;
@@ -399,7 +399,7 @@ bool recvPing(NETQUEUE queue)
 		const auto& senderIdentity = getMultiStats(sender).identity;
 		if (!senderIdentity.empty())
 		{
-			const auto signatureData = NETpingSignatureData(expectedPingChallenge.value().data(), PING_CHALLENGE_BYTES, selectedPlayer, sender, NetPlay.hostPlayer, hostPublicKey);
+			const auto signatureData = NETpingSignatureData(expectedPingChallenge.value().data(), PING_CHALLENGE_BYTES, localControllerSlot(), sender, NetPlay.hostPlayer, hostPublicKey);
 			verifiedResponse = senderIdentity.verify(challengeResponse, signatureData.data(), signatureData.size());
 		}
 		if (!verifiedResponse)

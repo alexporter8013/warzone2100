@@ -1841,10 +1841,10 @@ static void restoreLocalPlayerMultiStats()
 	{
 		return;
 	}
-	PLAYERSTATS stats = getMultiStats(selectedPlayer); // preserve an already-loaded identity, if any
+	PLAYERSTATS stats = getMultiStats(localControllerSlot()); // preserve an already-loaded identity, if any
 	loadMultiStats(sPlayer, &stats);
-	setMultiStats(selectedPlayer, stats, false);
-	setMultiStats(selectedPlayer, stats, true);
+	setMultiStats(localControllerSlot(), stats, false);
+	setMultiStats(localControllerSlot(), stats, true);
 }
 
 LoadingTask<> coldLoadGameInit(ResourceLoadingController &controller, const std::string &folderPath)

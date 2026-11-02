@@ -49,7 +49,7 @@ static std::weak_ptr<WzInGameChatScreen> psCurrentChatScreen;
 
 static bool isFreeChatDisabledByHost()
 {
-	return bMultiPlayer && selectedPlayer < MAX_CONNECTED_PLAYERS && !ingame.hostChatPermissions[selectedPlayer];
+	return bMultiPlayer && localControllerSlot() < MAX_CONNECTED_PLAYERS && !ingame.hostChatPermissions[localControllerSlot()];
 }
 
 static bool isFreeChatEnabledForLocalPlayer()
@@ -329,7 +329,7 @@ void WzInGameChatBoxForm::initialize(WzChatMode initialChatMode, const W_EDITBOX
 			auto message = InGameChatMessage(selectedPlayer, pStr);
 			bool processedCheatCode = attemptCheatCode(message.text);		// parse the message
 
-			bool skipSendingMessage = (bMultiPlayer && (selectedPlayer >= MAX_CONNECTED_PLAYERS || !ingame.hostChatPermissions[selectedPlayer])) || isLocalQuickChatOnlyMode();
+			bool skipSendingMessage = (bMultiPlayer && (localControllerSlot() >= MAX_CONNECTED_PLAYERS || !ingame.hostChatPermissions[localControllerSlot()])) || isLocalQuickChatOnlyMode();
 
 			if (!skipSendingMessage)
 			{
@@ -586,7 +586,7 @@ void WzInGameChatScreen_CLICKFORM::initialize(WzChatMode initialChatMode)
 {
 	bool freeChatEnabled = isFreeChatEnabledForLocalPlayer();
 	// for now, quick chat is only available in skirmish / multiplayer mode, for players
-	bool quickChatEnabled = (bMultiPlayer && selectedPlayer < MAX_PLAYERS && !NetPlay.players[selectedPlayer].isSpectator);
+	bool quickChatEnabled = (bMultiPlayer && localControllerSlot() < MAX_PLAYERS && !NetPlay.players[localControllerSlot()].isSpectator);
 
 	auto weakSelf = std::weak_ptr<WzInGameChatScreen_CLICKFORM>(std::dynamic_pointer_cast<WzInGameChatScreen_CLICKFORM>(shared_from_this()));
 	consoleBox = WzInGameChatBoxForm::make(initialChatMode, [weakSelf](W_EDITBOX&) -> bool {
