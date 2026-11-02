@@ -143,10 +143,23 @@ static bool		giftsUp[MAX_PLAYERS] = {true};		//gift buttons for player are up.
  * \param mode  the specified alliance
  * \param player the specified player
  */
+// The rows of this menu are connection slots. In a co-op campaign every human controls the one shared game player, so a
+// slot's number says nothing about its alliances or units (the slot after ours is also an enemy faction's number),
+// and "us" is our slot, not selectedPlayer.
+static int menuSelf()
+{
+	return isCoopGame() ? localControllerSlot() : selectedPlayer;
+}
+
+static int menuFaction(int row)
+{
+	return (isCoopGame() && isHumanPlayer(row)) ? COOP_CAMPAIGN_PLAYER : row;
+}
+
 static PIELIGHT GetPlayerTextColor(int mode, UDWORD player)
 {
 	// override color if they are dead...
-	if (player >= MAX_PLAYERS || (gameWorld.objects.droids[player].empty() && gameWorld.objects.structures[player].empty()))
+	if (player >= MAX_PLAYERS || (gameWorld.objects.droids[menuFaction(player)].empty() && gameWorld.objects.structures[menuFaction(player)].empty()))
 	{
 		return WZCOL_GREY;			// dead text color
 	}
@@ -873,18 +886,18 @@ private:
 		auto nameGrid = std::make_shared<GridLayout>();
 		char name[128];
 		ssprintf(name, "%d: %s", NetPlay.players[player].position, getPlayerName(player));
-		nameGrid->place({0, 1, false}, {0}, std::make_shared<MultiMenuDroidView>(player));
+		nameGrid->place({0, 1, false}, {0}, std::make_shared<MultiMenuDroidView>(menuFaction(player)));
 		auto nameLabel = makeLabel(name);
 		nameGrid->place({1}, {0}, nameLabel);
 
 		auto alliancesGrid = std::make_shared<GridLayout>();
 
-		bool selectedPlayerIsSpectator = NetPlay.players[selectedPlayer].isSpectator;
+		bool selectedPlayerIsSpectator = NetPlay.players[menuSelf()].isSpectator;
 
 		// add channel opener.
 		// - not configurable for self (obviously)
 		// - players shouldn't configure channel to spectators
-		if ((player != selectedPlayer) && (selectedPlayerIsSpectator || !NetPlay.players[player].isSpectator))
+		if (((int)player != menuSelf()) && (selectedPlayerIsSpectator || !NetPlay.players[player].isSpectator))
 		{
 			W_BUTINIT sButInit;
 			sButInit.width	= 35;
@@ -913,7 +926,8 @@ private:
 			alliancesGrid->place({0}, {0}, Margin(0, 1, 0, 0).wrap(channelButton));
 		}
 
-		if (alliancesCanGiveAnything(game.alliance) && player != selectedPlayer && player < MAX_PLAYERS && !NetPlay.players[player].isSpectator)
+		// no alliances or gifts between the humans of a co-op campaign: they are one player
+		if (!isCoopGame() && alliancesCanGiveAnything(game.alliance) && player != selectedPlayer && player < MAX_PLAYERS && !NetPlay.players[player].isSpectator)
 		{
 			W_BUTINIT sButInit;
 			//alliance
@@ -1019,7 +1033,7 @@ private:
 
 		// chat mute button
 		std::shared_ptr<WIDGET> muteWidget;
-		if (player != selectedPlayer)
+		if ((int)player != menuSelf())
 		{
 			W_BUTINIT sButInit;
 			sButInit.id		= MULTIMENU_PLAYER_MUTE_START + player;
@@ -1056,10 +1070,12 @@ private:
 	{
 		for (auto &playerWidget: playersWidgets)
 		{
-			const auto color = GetPlayerTextColor((selectedPlayer < MAX_PLAYERS && playerWidget.player < MAX_PLAYERS) ? alliances[selectedPlayer][playerWidget.player] : 0, playerWidget.player);
 			const bool isHuman = isHumanPlayer(playerWidget.player);
-			const bool isAlly = (selectedPlayer < MAX_PLAYERS && playerWidget.player < MAX_PLAYERS) && aiCheckAlliances(selectedPlayer, playerWidget.player);
-			const bool isSelectedPlayer = playerWidget.player == selectedPlayer;
+			const bool coopTeammate = isCoopGame() && isHuman;	// the other humans share our player
+			const auto color = GetPlayerTextColor(coopTeammate ? ALLIANCE_FORMED : ((selectedPlayer < MAX_PLAYERS && playerWidget.player < MAX_PLAYERS) ? alliances[selectedPlayer][playerWidget.player] : 0), playerWidget.player);
+			const bool isAlly = coopTeammate || ((selectedPlayer < MAX_PLAYERS && playerWidget.player < MAX_PLAYERS) && aiCheckAlliances(selectedPlayer, playerWidget.player));
+			const bool isSelectedPlayer = (int)playerWidget.player == menuSelf();
+			const int faction = menuFaction(playerWidget.player);
 
 			playerWidget.name->setFontColour(color);
 			playerWidget.score->setFontColour(color);
@@ -1091,7 +1107,7 @@ private:
 			//only show player's and allies' unit counts, and nobody elses.
 			if (isAlly || gInputManager.debugManager().debugMappingsAllowed())
 			{
-				ssprintf(unitsString, "%d", getNumDroids(playerWidget.player) + getNumTransporterDroids(playerWidget.player));
+				ssprintf(unitsString, "%d", getNumDroids(faction) + getNumTransporterDroids(faction));
 			}
 
 			/* Display player power instead of number of played games
@@ -1100,7 +1116,7 @@ private:
 			if (gInputManager.debugManager().debugMappingsAllowed())  //Won't pass this when in both release and multiplayer modes
 			{
 				// Player power
-				ssprintf(lastString, "%u", (int)getPower(playerWidget.player));
+				ssprintf(lastString, "%u", (int)getPower(faction));
 			}
 			else if (runningMultiplayer())
 			{
@@ -1123,7 +1139,7 @@ private:
 				if (isAlly || gInputManager.debugManager().debugMappingsAllowed())
 				{
 					// NOTE, This tallys up *all* the structures you have. Test out via 'start with no base'.
-					int num = gameWorld.objects.structures[playerWidget.player].size();
+					int num = gameWorld.objects.structures[faction].size();
 					ssprintf(lastString, "%d", num);
 				}
 			}
@@ -1139,7 +1155,7 @@ private:
 			{
 				// alliance
 				// manage buttons by showing or hiding them. gifts only in campaign,
-				if (alliancesCanGiveAnything(game.alliance))
+				if (!isCoopGame() && alliancesCanGiveAnything(game.alliance))
 				{
 					if (isAlly && !isSelectedPlayer && !giftsUp[playerWidget.player])
 					{
