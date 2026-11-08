@@ -1122,6 +1122,11 @@ void processMouseClickInput()
 				// Alt+move = disembark transporter
 				wzSetCursor(CURSOR_DISEMBARK);
 			}
+			else if (arnMPointers[item][selection] == CURSOR_MOVE && orderMoveAssignedActive(selectedPlayer))
+			{
+				// "Move assigned units" is latched: the next click moves the units assigned to the selection
+				wzSetCursor(CURSOR_ATTACH);
+			}
 			else if (specialOrderKeyDown() && selection == SC_DROID_DIRECT &&
 			         arnMPointers[item][selection] == CURSOR_MOVE)
 			{

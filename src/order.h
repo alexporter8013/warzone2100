@@ -94,6 +94,8 @@ void orderSelectedLoc(uint32_t player, uint32_t x, uint32_t y, bool add);
 bool orderMoveAssignedToggle(uint32_t player);
 bool orderMoveAssignedActive(uint32_t player);
 void orderMoveAssignedDisarm();
+/// Replaces the selection with everything assigned to the selected sensors, commanders and sensor towers (recursively).
+void orderSelectAssigned(uint32_t player);
 
 /** \brief Sends an order with an object target to all selected droids. add = true queues the order. */
 void orderSelectedObj(UDWORD player, BASE_OBJECT *psObj);

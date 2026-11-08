@@ -2239,6 +2239,15 @@ MappableFunction kf_OrderDroid(const DroidOrderType order)
 }
 
 // --------------------------------------------------------------------------
+void kf_SelectAssigned()
+{
+	/* not supported if a spectator */
+	SPECTATOR_NO_OP();
+
+	orderSelectAssigned(selectedPlayer);
+}
+
+// --------------------------------------------------------------------------
 void kf_MoveAssigned()
 {
 	/* not supported if a spectator */

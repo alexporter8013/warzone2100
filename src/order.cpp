@@ -1377,6 +1377,10 @@ static void orderCmdGroupBase(DROID_GROUP *psGroup, DROID_ORDER_DATA *psData)
 #define	AUDIO_DELAY_FIRESUPPORT		(3*GAME_TICKS_PER_SEC)
 
 
+/** True while a queued order is being started from the droid's order list. Queued fire support orders are
+ * re-assignments (e.g. after "move assigned units"), which should not be announced again.*/
+static bool orderStartedFromList = false;
+
 /** This function chooses the sound to play after the object is assigned to fire support a specific unit. Uses audio_QueueTrackMinDelay() to play the sound.
  * @todo this function is about playing audio. I'm not sure this should be in here.
  */
@@ -1717,7 +1721,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 			actionDroid(psDroid, DACTION_FIRESUPPORT, psOrder->psObj);
 		}
 
-		if (psDroid->player == selectedPlayer)
+		if (psDroid->player == selectedPlayer && !orderStartedFromList)
 		{
 			orderPlayFireSupportAudio(psOrder->psObj);
 		}
@@ -2494,7 +2498,9 @@ bool orderDroidList(DROID *psDroid)
 			return false;
 		}
 
+		orderStartedFromList = true;
 		orderDroidBase(psDroid, &sOrder);
+		orderStartedFromList = false;
 		syncDebugDroid(psDroid, 'o');
 
 		return true;
@@ -2718,7 +2724,7 @@ bool orderMoveAssignedActive(uint32_t player)
 struct AssignedDroid
 {
 	DROID *psDroid;
-	DROID *psSupportLeader;  // set if the droid has a fire support order that must be restored after the move
+	DROID *psSupportLeader;  // sensor the droid supports (to be restored after the move); null if the droid was only walked through
 };
 
 static void collectAssignedDroids(const DROID *psLeader, std::vector<AssignedDroid> &found)
@@ -2729,12 +2735,11 @@ static void collectAssignedDroids(const DROID *psLeader, std::vector<AssignedDro
 		{
 			continue;
 		}
-		DROID *psSupportLeader = nullptr;
-		if (psCurr->order.type == DORDER_FIRESUPPORT && psCurr->order.psObj == psLeader)
-		{
-			psSupportLeader = const_cast<DROID *>(psLeader);
-		}
-		else if (!(hasCommander(psCurr) && psCurr->psGroup->psCommander == psLeader))
+		const bool fireSupport = psCurr->order.type == DORDER_FIRESUPPORT && psCurr->order.psObj == psLeader;
+		// Group members are walked through, not moved: moving the commander already moves its group,
+		// and any order given to a member would take it out of the group.
+		const bool groupMember = hasCommander(psCurr) && psCurr->psGroup->psCommander == psLeader;
+		if (!fireSupport && !groupMember)
 		{
 			continue;
 		}
@@ -2743,14 +2748,76 @@ static void collectAssignedDroids(const DROID *psLeader, std::vector<AssignedDro
 		{
 			continue;
 		}
-		found.push_back({psCurr, psSupportLeader});
+		if (fireSupport && !psCurr->selected)
+		{
+			found.push_back({psCurr, const_cast<DROID *>(psLeader)});
+		}
+		else
+		{
+			// remember that this droid was walked, so groups cannot loop
+			found.push_back({psCurr, nullptr});
+		}
 		collectAssignedDroids(psCurr, found);
 	}
 }
 
-/** Sends everything assigned to the selected droids to a location, without changing the assignments.
- * Fire support units get a move order followed by a queued fire support order for the same sensor.
- * Commander group members fall back to guarding their commander once the move is done.*/
+/** Everything assigned to psLeader, recursively: fire support units (of a sensor droid or tower) and the members of a commander's group.*/
+static void collectAssignedObjects(const BASE_OBJECT *psLeader, std::vector<DROID *> &found)
+{
+	const DROID *psLeaderDroid = castDroid(const_cast<BASE_OBJECT *>(psLeader));
+	for (DROID *psCurr : gameWorld.objects.droids[psLeader->player])
+	{
+		if (psCurr == psLeader || psCurr->isTransporter())
+		{
+			continue;
+		}
+		const bool fireSupport = psCurr->order.type == DORDER_FIRESUPPORT && psCurr->order.psObj == psLeader;
+		const bool groupMember = psLeaderDroid != nullptr && hasCommander(psCurr) && psCurr->psGroup->psCommander == psLeaderDroid;
+		if ((!fireSupport && !groupMember) || std::find(found.begin(), found.end(), psCurr) != found.end())
+		{
+			continue;
+		}
+		found.push_back(psCurr);
+		collectAssignedObjects(psCurr, found);
+	}
+}
+
+void orderSelectAssigned(uint32_t player)
+{
+	ASSERT_PLAYER_OR_RETURN(, player);
+
+	std::vector<DROID *> assigned;
+	for (const DROID *psCurr : gameWorld.objects.droids[player])
+	{
+		if (psCurr->selected)
+		{
+			collectAssignedObjects(psCurr, assigned);
+		}
+	}
+	for (const STRUCTURE *psCurr : gameWorld.objects.structures[player])
+	{
+		if (psCurr->selected)
+		{
+			collectAssignedObjects(psCurr, assigned);
+		}
+	}
+
+	if (assigned.empty())
+	{
+		CONPRINTF("%s", _("Nothing is assigned to the selected units"));
+		return;
+	}
+
+	clearSelection();
+	for (DROID *psCurr : assigned)
+	{
+		SelectDroid(psCurr);
+	}
+}
+
+/** Sends the fire support units assigned to the selected droids (directly, or through a commander's group members)
+ * to a location, without changing the assignments: each gets a move order followed by a queued fire support order
+ * for the same sensor. Units that are selected, or in a commander's group, are not moved.*/
 static void orderSelectedAssignedLoc(uint32_t player, uint32_t x, uint32_t y)
 {
 	std::vector<AssignedDroid> assigned;
@@ -2764,23 +2831,26 @@ static void orderSelectedAssignedLoc(uint32_t player, uint32_t x, uint32_t y)
 
 	bOrderEffectDisplayed = false;
 
+	const bool anyMoved = std::any_of(assigned.begin(), assigned.end(), [](const AssignedDroid &a) { return a.psSupportLeader != nullptr; });
+
 	for (const AssignedDroid &a : assigned)
 	{
+		if (a.psSupportLeader == nullptr)
+		{
+			continue;
+		}
 		PROPULSION_TYPE propulsion = a.psDroid->getPropulsionStats()->propulsionType;
 		if (fpathBlockingTile(gameWorld.map, map_coord(x), map_coord(y), propulsion))
 		{
 			continue;
 		}
 		orderDroidLoc(a.psDroid, DORDER_MOVE, x, y, ModeQueue);
-		if (a.psSupportLeader != nullptr)
-		{
-			orderDroidObjAdd(a.psDroid, DroidOrder(DORDER_FIRESUPPORT, a.psSupportLeader), true);
-		}
+		orderDroidObjAdd(a.psDroid, DroidOrder(DORDER_FIRESUPPORT, a.psSupportLeader), true);
 	}
 
-	if (assigned.empty())
+	if (!anyMoved)
 	{
-		CONPRINTF("%s", _("Nothing is assigned to the selected units"));
+		CONPRINTF("%s", _("No fire support units are assigned to the selected units"));
 	}
 }
 
