@@ -33,6 +33,8 @@
 #include "lib/ivis_opengl/ivisdef.h"
 
 #include "objects.h"
+#include <algorithm>
+#include <vector>
 #include "order.h"
 #include "ordersource.h"
 #include "action.h"
@@ -2666,6 +2668,123 @@ DROID_ORDER chooseOrderLoc(DROID *psDroid, UDWORD x, UDWORD y, bool altOrder)
 }
 
 
+// "Move assigned" mode. While latched, the next destination order goes to the units assigned to the selected
+// droids (fire support units of a sensor, group members of a commander, recursively) instead of to the selection.
+// The mode is dropped when the selection changes or any other command is given.
+static bool moveAssignedLatched = false;
+static std::vector<UDWORD> moveAssignedSelection;
+
+static std::vector<UDWORD> selectedDroidIds(uint32_t player)
+{
+	std::vector<UDWORD> ids;
+	for (const DROID *psCurr : gameWorld.objects.droids[player])
+	{
+		if (psCurr->selected)
+		{
+			ids.push_back(psCurr->id);
+		}
+	}
+	std::sort(ids.begin(), ids.end());
+	return ids;
+}
+
+void orderMoveAssignedDisarm()
+{
+	moveAssignedLatched = false;
+	moveAssignedSelection.clear();
+}
+
+bool orderMoveAssignedToggle(uint32_t player)
+{
+	if (moveAssignedLatched)
+	{
+		orderMoveAssignedDisarm();
+		return false;
+	}
+	moveAssignedSelection = selectedDroidIds(player);
+	moveAssignedLatched = !moveAssignedSelection.empty();
+	return moveAssignedLatched;
+}
+
+bool orderMoveAssignedActive(uint32_t player)
+{
+	if (moveAssignedLatched && moveAssignedSelection != selectedDroidIds(player))
+	{
+		orderMoveAssignedDisarm();
+	}
+	return moveAssignedLatched;
+}
+
+struct AssignedDroid
+{
+	DROID *psDroid;
+	DROID *psSupportLeader;  // set if the droid has a fire support order that must be restored after the move
+};
+
+static void collectAssignedDroids(const DROID *psLeader, std::vector<AssignedDroid> &found)
+{
+	for (DROID *psCurr : gameWorld.objects.droids[psLeader->player])
+	{
+		if (psCurr == psLeader || psCurr->isVtol() || psCurr->isTransporter())
+		{
+			continue;
+		}
+		DROID *psSupportLeader = nullptr;
+		if (psCurr->order.type == DORDER_FIRESUPPORT && psCurr->order.psObj == psLeader)
+		{
+			psSupportLeader = const_cast<DROID *>(psLeader);
+		}
+		else if (!(hasCommander(psCurr) && psCurr->psGroup->psCommander == psLeader))
+		{
+			continue;
+		}
+		const bool seen = std::any_of(found.begin(), found.end(), [psCurr](const AssignedDroid &a) { return a.psDroid == psCurr; });
+		if (seen)
+		{
+			continue;
+		}
+		found.push_back({psCurr, psSupportLeader});
+		collectAssignedDroids(psCurr, found);
+	}
+}
+
+/** Sends everything assigned to the selected droids to a location, without changing the assignments.
+ * Fire support units get a move order followed by a queued fire support order for the same sensor.
+ * Commander group members fall back to guarding their commander once the move is done.*/
+static void orderSelectedAssignedLoc(uint32_t player, uint32_t x, uint32_t y)
+{
+	std::vector<AssignedDroid> assigned;
+	for (const DROID *psCurr : gameWorld.objects.droids[player])
+	{
+		if (psCurr->selected)
+		{
+			collectAssignedDroids(psCurr, assigned);
+		}
+	}
+
+	bOrderEffectDisplayed = false;
+
+	for (const AssignedDroid &a : assigned)
+	{
+		PROPULSION_TYPE propulsion = a.psDroid->getPropulsionStats()->propulsionType;
+		if (fpathBlockingTile(gameWorld.map, map_coord(x), map_coord(y), propulsion))
+		{
+			continue;
+		}
+		orderDroidLoc(a.psDroid, DORDER_MOVE, x, y, ModeQueue);
+		if (a.psSupportLeader != nullptr)
+		{
+			orderDroidObjAdd(a.psDroid, DroidOrder(DORDER_FIRESUPPORT, a.psSupportLeader), true);
+		}
+	}
+
+	if (assigned.empty())
+	{
+		CONPRINTF("%s", _("Nothing is assigned to the selected units"));
+	}
+}
+
+
 /** This function sends the selected droids an order to given a location. If a delivery point is selected, it is moved to a new location.
  * If add is true then the order is queued.
  * This function should only be called from UI.
@@ -2681,6 +2800,13 @@ void orderSelectedLoc(uint32_t player, uint32_t x, uint32_t y, bool add)
 	}
 
 	ASSERT_PLAYER_OR_RETURN(, player);
+
+	if (orderMoveAssignedActive(player))
+	{
+		orderSelectedAssignedLoc(player, x, y);
+		orderMoveAssignedDisarm();
+		return;
+	}
 
 	// note that an order list graphic needs to be displayed
 	bOrderEffectDisplayed = false;
@@ -3024,6 +3150,8 @@ static void orderPlayOrderObjAudio(UDWORD player, BASE_OBJECT *psObj)
 void orderSelectedObjAdd(UDWORD player, BASE_OBJECT *psObj, bool add)
 {
 	ASSERT_PLAYER_OR_RETURN(, player);
+
+	orderMoveAssignedDisarm();
 
 	// note that an order list graphic needs to be displayed
 	bOrderEffectDisplayed = false;

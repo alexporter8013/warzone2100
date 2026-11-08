@@ -116,6 +116,7 @@ MappableFunction kf_SelectUnits(const SELECTIONTYPE selectionType, const SELECTI
 MappableFunction kf_SelectNoGroupUnits(const SELECTIONTYPE selectionType, const SELECTION_CLASS selectionClass = SELECTION_CLASS::DS_BY_TYPE, const bool bOnScreen = false);
 MappableFunction kf_SetDroid(const SECONDARY_ORDER order, const SECONDARY_STATE state);
 MappableFunction kf_OrderDroid(const DroidOrderType order);
+void kf_MoveAssigned();
 
 void kf_CentreOnBase();
 void kf_ToggleFog();

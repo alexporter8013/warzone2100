@@ -2225,6 +2225,8 @@ MappableFunction kf_OrderDroid(const DroidOrderType order)
 		/* not supported if a spectator */
 		SPECTATOR_NO_OP();
 
+		orderMoveAssignedDisarm();
+
 		for (DROID* psDroid : gameWorld.objects.droids[selectedPlayer])
 		{
 			if (psDroid->selected)
@@ -2234,6 +2236,22 @@ MappableFunction kf_OrderDroid(const DroidOrderType order)
 		}
 		intRefreshOrder();
 	};
+}
+
+// --------------------------------------------------------------------------
+void kf_MoveAssigned()
+{
+	/* not supported if a spectator */
+	SPECTATOR_NO_OP();
+
+	if (orderMoveAssignedToggle(selectedPlayer))
+	{
+		CONPRINTF("%s", _("Move assigned units: click a destination"));
+	}
+	else
+	{
+		CONPRINTF("%s", _("Move assigned units: cancelled"));
+	}
 }
 
 // --------------------------------------------------------------------------
